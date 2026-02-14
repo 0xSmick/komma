@@ -1,23 +1,84 @@
 {
-  "name": "doc-editor",
+  "name": "helm",
   "version": "0.1.0",
   "private": true,
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "electron:dev": "npm run build:electron && electron .",
+    "electron:build": "next build && npm run build:electron && electron-builder",
+    "dist": "npm run electron:build"
   },
   "dependencies": {
+    "@floating-ui/dom": "^1.7.5",
+    "@tailwindcss/typography": "^0.5.19",
+    "@tiptap/extension-link": "^3.17.0",
+    "@tiptap/extension-placeholder": "^3.17.0",
+    "@tiptap/extension-table": "^3.17.0",
+    "@tiptap/extension-table-cell": "^3.17.0",
+    "@tiptap/extension-table-header": "^3.17.0",
+    "@tiptap/extension-table-row": "^3.17.0",
+    "@tiptap/extension-underline": "^3.17.0",
+    "@tiptap/pm": "^3.17.0",
+    "@tiptap/react": "^3.17.0",
+    "@tiptap/starter-kit": "^3.17.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/turndown": "^5.0.6",
+    "better-sqlite3": "^12.6.2",
+    "marked": "^17.0.1",
     "next": "16.1.4",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "rehype-raw": "^7.0.0",
+    "remark-frontmatter": "^5.0.0",
+    "remark-gfm": "^4.0.1",
+    "turndown": "^7.2.2"
+  },
+  "build": {
+    "appId": "com.helm.app",
+    "productName": "Helm",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg",
+      "icon": "build/icon.icns"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "!node_modules",
+      "!src",
+      "!electron"
+    ],
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": "app/.next/standalone"
+      },
+      {
+        "from": ".next/static",
+        "to": "app/.next/static"
+      },
+      {
+        "from": "public",
+        "to": "app/public"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ]
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
     "eslint": "^9",
     "eslint-config-next": "16.1.4",
     "tailwindcss": "^4",

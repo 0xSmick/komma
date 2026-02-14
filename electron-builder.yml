@@ -1,0 +1,14 @@
+appId: com.helm.app
+productName: Helm
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist-electron/**/*
+  - .next/standalone/**/*
+  - public/**/*
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip

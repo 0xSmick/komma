@@ -1,26 +1,685 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
+/* ═══════════════════════════════════════════
+   LIGHT MODE — "Daylight"
+   Clean, sharp, indigo accent
+   ═══════════════════════════════════════════ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-paper: #f8f9fc;
+  --color-paper-dark: #eef0f5;
+  --color-surface: #ffffff;
+  --color-ink: #151720;
+  --color-ink-muted: #545972;
+  --color-ink-faded: #8b90a5;
+
+  /* Accent — electric indigo */
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+  --color-accent-light: #eef2ff;
+  --color-accent-subtle: rgba(99, 102, 241, 0.08);
+  --color-accent-glow: rgba(99, 102, 241, 0.15);
+  --color-highlight: #fef3c7;
+  --color-amber: #f59e0b;
+
+  /* Status */
+  --color-success: #10b981;
+  --color-danger: #ef4444;
+
+  /* Borders */
+  --color-border: #e2e5ed;
+  --color-border-dark: #c8cdd9;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(21, 23, 32, 0.05);
+  --shadow-md: 0 4px 12px rgba(21, 23, 32, 0.08);
+  --shadow-lg: 0 8px 24px rgba(21, 23, 32, 0.12);
+  --shadow-glow: 0 0 20px var(--color-accent-glow);
+
+  /* Vim mode bar */
+  --color-vim-normal-bg: var(--color-paper-dark);
+  --color-vim-normal-fg: var(--color-ink-faded);
+  --color-vim-insert-bg: var(--color-accent);
+  --color-vim-insert-fg: #ffffff;
+
+  --font-serif: var(--font-serif);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+/* ═══════════════════════════════════════════
+   DARK MODE — "Midnight"
+   Deep charcoal, electric cyan accent
+   ═══════════════════════════════════════════ */
+[data-theme="dark"] {
+  --color-paper: #0b0d14;
+  --color-paper-dark: #12151e;
+  --color-surface: #181b28;
+  --color-ink: #e4e7f0;
+  --color-ink-muted: #8b92a8;
+  --color-ink-faded: #636b88;
+
+  /* Accent — electric cyan */
+  --color-accent: #22d3ee;
+  --color-accent-hover: #06b6d4;
+  --color-accent-light: #0e3640;
+  --color-accent-subtle: rgba(34, 211, 238, 0.06);
+  --color-accent-glow: rgba(34, 211, 238, 0.2);
+  --color-highlight: #422006;
+  --color-amber: #f59e0b;
+
+  /* Status */
+  --color-success: #34d399;
+  --color-danger: #f87171;
+
+  /* Borders */
+  --color-border: #1e2231;
+  --color-border-dark: #2a3045;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 30px var(--color-accent-glow);
+
+  /* Vim mode bar */
+  --color-vim-normal-bg: #12151e;
+  --color-vim-normal-fg: #4f5672;
+  --color-vim-insert-bg: #0e7490;
+  --color-vim-insert-fg: #e0f7fa;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  min-width: 100vw;
+}
+
+/* Subtle texture */
+.paper-texture {
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 253, 248, 0.5) 0%, transparent 60%);
+}
+[data-theme="dark"] .paper-texture {
+  background-image:
+    radial-gradient(ellipse at 30% -10%, rgba(34, 211, 238, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 110%, rgba(99, 102, 241, 0.03) 0%, transparent 50%);
+}
+
+/* Bug 1 fix: Ensure all prose content is selectable */
+.prose,
+.prose * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.prose table,
+.prose table *,
+.prose pre,
+.prose pre *,
+.prose code {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ═══════════════════════════════════════════
+   TYPOGRAPHY — Editorial prose
+   ═══════════════════════════════════════════ */
+.prose-editorial {
+  --tw-prose-body: var(--color-ink);
+  --tw-prose-headings: var(--color-ink);
+  --tw-prose-bold: var(--color-ink);
+  --tw-prose-links: var(--color-accent);
+  --tw-prose-code: var(--color-accent);
+  --tw-prose-quotes: var(--color-ink-muted);
+  --tw-prose-quote-borders: var(--color-amber);
+  --tw-prose-counters: var(--color-ink-muted);
+  --tw-prose-bullets: var(--color-amber);
+  --tw-prose-hr: var(--color-border);
+  --tw-prose-th-borders: var(--color-border);
+  --tw-prose-td-borders: var(--color-border);
+  color: var(--color-ink);
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.125rem;
+  line-height: 1.8;
+}
+
+.prose-editorial strong,
+.prose-editorial b {
+  color: var(--color-ink);
+  font-weight: 700;
+}
+
+.prose-editorial h1,
+.prose-editorial h2,
+.prose-editorial h3,
+.prose-editorial h4 {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-top: 2em;
+  margin-bottom: 0.75em;
+}
+
+.prose-editorial h1 {
+  font-size: 2.5rem;
+  line-height: 1.2;
+  border-bottom: none;
+  padding-bottom: 0;
+  background: linear-gradient(135deg, var(--color-ink) 0%, var(--color-ink-muted) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+[data-theme="dark"] .prose-editorial h1 {
+  background: linear-gradient(135deg, #ffffff 0%, var(--color-ink) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.prose-editorial h2 {
+  font-size: 1.85rem;
+  line-height: 1.3;
+  color: var(--color-ink);
+  position: relative;
+  padding-bottom: 0.4em;
+}
+.prose-editorial h2::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 40px;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 1px;
+}
+
+.prose-editorial h3 {
+  font-size: 1.35rem;
+  color: var(--color-ink-muted);
+  font-weight: 600;
+}
+
+.prose-editorial p {
+  margin-bottom: 1.5em;
+}
+
+.prose-editorial a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent-light);
+  text-underline-offset: 3px;
+  transition: all 0.15s ease;
+}
+
+.prose-editorial a:hover {
+  text-decoration-color: var(--color-accent);
+}
+
+/* Comment highlights */
+.comment-highlight {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  padding: 1px 2px;
+  border-radius: 2px;
+  border-bottom: 2px solid #f59e0b;
+  cursor: help;
+}
+[data-theme="dark"] .comment-highlight {
+  background: linear-gradient(135deg, #422006, #78350f);
+  border-bottom-color: #f59e0b;
+}
+
+.comment-highlight-active {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  border-bottom-color: #3b82f6;
+}
+[data-theme="dark"] .comment-highlight-active {
+  background: linear-gradient(135deg, #1e3a5f, #1e40af);
+  border-bottom-color: #60a5fa;
+}
+
+.comment-highlight-applied {
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  border-bottom-color: #059669;
+}
+[data-theme="dark"] .comment-highlight-applied {
+  background: linear-gradient(135deg, #064e3b, #065f46);
+  border-bottom-color: #34d399;
+}
+
+/* Wiki-link styles */
+.prose-editorial a.wiki-link {
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  text-decoration: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.prose-editorial a.wiki-link:hover {
+  background: var(--color-accent);
+  color: white;
+  text-decoration: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.prose-editorial blockquote {
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-accent-subtle);
+  padding: 1em 1.5em;
+  border-radius: 0 8px 8px 0;
+  font-style: italic;
+}
+
+.prose-editorial code {
+  background: var(--color-paper-dark);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.9em;
+  color: var(--color-accent);
+  border: 1px solid var(--color-border);
+}
+
+.prose-editorial pre {
+  background: #0d0f16;
+  color: #e8e4dc;
+  border-radius: 12px;
+  padding: 1.25em;
+  overflow-x: auto;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+[data-theme="dark"] .prose-editorial pre {
+  background: #080a10;
+  border: 1px solid var(--color-border);
+}
+
+.prose-editorial pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  border: none;
+}
+
+/* Tables */
+.prose-editorial table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+  margin: 1.5em 0;
+  width: 100%;
+}
+
+.prose-editorial th {
+  background: var(--color-paper-dark);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: left;
+  padding: 0.75em 1em;
+  border-bottom: 2px solid var(--color-border);
+  color: var(--color-ink-muted);
+}
+
+.prose-editorial td {
+  padding: 0.75em 1em;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.95rem;
+}
+
+.prose-editorial tr:last-child td {
+  border-bottom: none;
+}
+
+.prose-editorial tbody tr:nth-child(even) td {
+  background: var(--color-accent-subtle);
+}
+
+.prose-editorial tbody tr {
+  transition: background 0.1s ease;
+}
+
+.prose-editorial tbody tr:hover td {
+  background: var(--color-accent-subtle);
+}
+
+/* TipTap table editing styles */
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  overflow: hidden;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  border: 2px solid var(--color-border);
+  box-sizing: border-box;
+  min-width: 1em;
+  padding: 0.5em 0.75em;
+  position: relative;
+  vertical-align: top;
+}
+
+.ProseMirror th {
+  background-color: var(--color-paper-dark);
+  font-weight: 600;
+}
+
+.ProseMirror .selectedCell:after {
+  background: rgba(99, 102, 241, 0.15);
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+[data-theme="dark"] .ProseMirror .selectedCell:after {
+  background: rgba(34, 211, 238, 0.15);
+}
+
+.ProseMirror .column-resize-handle {
+  background-color: var(--color-accent);
+  bottom: -2px;
+  pointer-events: none;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 4px;
+}
+
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+.prose-editorial ul,
+.prose-editorial ol {
+  padding-left: 1.5em;
+}
+
+.prose-editorial li {
+  margin-bottom: 0.5em;
+}
+
+.prose-editorial li::marker {
+  color: var(--color-accent);
+}
+
+.prose-editorial hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-border-dark), transparent);
+  margin: 2.5em 0;
+}
+
+/* ═══════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideOutRight {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(100%); }
+}
+
+@keyframes fadeInBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 8px var(--color-accent-glow); }
+  50% { box-shadow: 0 0 16px var(--color-accent-glow), 0 0 24px var(--color-accent-glow); }
+}
+
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+.animate-slide-up { animation: slideUp 0.25s ease-out; }
+.animate-pulse-subtle { animation: pulse-subtle 2s ease-in-out infinite; }
+.animate-slide-in-right { animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.animate-slide-out-right { animation: slideOutRight 0.2s ease-in forwards; }
+.animate-backdrop { animation: fadeInBackdrop 0.2s ease-out; }
+
+/* ═══════════════════════════════════════════
+   SCROLLBAR — thin, only visible on hover
+   ═══════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+*:hover > ::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:hover,
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--color-border-dark);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-faded);
+}
+
+/* ═══════════════════════════════════════════
+   BUTTONS
+   ═══════════════════════════════════════════ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: white;
+  box-shadow: var(--shadow-sm), 0 0 12px var(--color-accent-glow);
+}
+[data-theme="dark"] .btn-primary {
+  color: #0d0f16;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  box-shadow: var(--shadow-md), 0 0 20px var(--color-accent-glow);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--color-paper-dark);
+  color: var(--color-ink-muted);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 12px var(--color-accent-glow);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-ink-muted);
+}
+
+.btn-ghost:hover {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
+
+/* ═══════════════════════════════════════════
+   INPUTS
+   ═══════════════════════════════════════════ */
+.input {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-glow);
+}
+
+.input-mono {
+  font-family: var(--font-mono), monospace;
+}
+
+/* ═══════════════════════════════════════════
+   CARDS
+   ═══════════════════════════════════════════ */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-dark);
+}
+
+/* ═══════════════════════════════════════════
+   TOOLTIPS
+   ═══════════════════════════════════════════ */
+.tooltip {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  padding: 0.375rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ═══════════════════════════════════════════
+   VIM BLOCK CURSOR — highlights current block in NORMAL mode
+   ═══════════════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   SEARCH HIGHLIGHTS
+   ═══════════════════════════════════════════ */
+.search-highlight {
+  background: rgba(250, 204, 21, 0.4);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+[data-theme="dark"] .search-highlight {
+  background: rgba(250, 204, 21, 0.25);
+}
+.search-highlight-active {
+  background: rgba(251, 146, 60, 0.6);
+  outline: 2px solid rgba(251, 146, 60, 0.8);
+  border-radius: 2px;
+}
+[data-theme="dark"] .search-highlight-active {
+  background: rgba(251, 146, 60, 0.4);
+  outline-color: rgba(251, 146, 60, 0.6);
+}
+
+.vim-block-cursor {
+  position: relative;
+  border-left: 2px solid var(--color-accent) !important;
+  padding-left: 14px !important;
+  background: var(--color-accent-subtle) !important;
+  border-radius: 0 6px 6px 0;
+  transition: all 0.15s ease;
+  box-shadow: inset 3px 0 12px -4px var(--color-accent-glow);
+}
+.vim-block-cursor::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-accent);
+  border-radius: 1px 0 0 1px;
+  box-shadow: 0 0 8px var(--color-accent-glow);
+}
+.vim-block-selected {
+  position: relative;
+  border-left: 2px solid var(--color-accent) !important;
+  padding-left: 14px !important;
+  background: var(--color-accent-subtle) !important;
+  border-radius: 0 6px 6px 0;
+  opacity: 0.6;
+  transition: all 0.15s ease;
 }
