@@ -13,7 +13,7 @@ interface UseClaudeOptions {
   createChangelog: (documentPath: string, requestId: string, commentsSnapshot: string) => Promise<number | null>;
   updateChangelog: (changelogId: number, status: string, streamLog?: string, summary?: string) => Promise<void>;
   loadDocument: () => Promise<unknown>;
-  setActiveTab: (tab: 'comments' | 'output' | 'chat') => void;
+  setActiveTab: (tab: 'toc' | 'edits' | 'chat') => void;
 }
 
 export function useClaude({
@@ -95,7 +95,7 @@ export function useClaude({
     setClaudeOutput('');
     setStreamOutput('');
     setIsStreaming(true);
-    setActiveTab('output');
+    setActiveTab('edits');
 
     // Clear the stream file (only needed for file-based flow)
     if (!isElectron) {
@@ -167,7 +167,7 @@ export function useClaude({
                 // Ignore — diff just won't show
               }
               await loadDocument();
-              setActiveTab('comments');
+              setActiveTab('edits');
             } else {
               const errorMessage = data.error || 'Failed to apply changes';
               setClaudeOutput(`Error: ${errorMessage}`);
@@ -242,7 +242,7 @@ export function useClaude({
                   // Ignore — diff just won't show
                 }
                 await loadDocument();
-                setActiveTab('comments');
+                setActiveTab('edits');
                 return;
               } else if (status.status === 'error') {
                 const errorMessage = status.message || 'Failed to apply changes';

@@ -52,7 +52,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancel(): Promise<void> {
       return ipcRenderer.invoke('claude:cancel');
     },
-    listMcps(): Promise<{ name: string }[]> {
+    listMcps(): Promise<{ name: string; source?: string }[]> {
       return ipcRenderer.invoke('claude:list-mcps');
     },
     onStream(

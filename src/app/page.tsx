@@ -17,8 +17,7 @@ import { useVim } from './hooks/useVim';
 import Header from './components/Header';
 import TabBar from './components/TabBar';
 import Sidebar from './components/Sidebar';
-import CommentsTab from './components/tabs/CommentsTab';
-import OutputTab from './components/tabs/OutputTab';
+import EditsTab from './components/tabs/EditsTab';
 import ChatTab from './components/tabs/ChatTab';
 import TableOfContentsTab from './components/tabs/TableOfContentsTab';
 import CommentTooltip from './components/CommentTooltip';
@@ -48,7 +47,7 @@ export default function Home() {
   }, [doc.saveDocument]);
   const setIsEditMode = useCallback((mode: boolean) => doc.setIsEditMode(mode), [doc.setIsEditMode]);
 
-  const [activeTab, setActiveTab] = useState<'toc' | 'comments' | 'output' | 'chat'>('comments');
+  const [activeTab, setActiveTab] = useState<'toc' | 'edits' | 'chat'>('edits');
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [showNewDocModal, setShowNewDocModal] = useState(false);
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
@@ -56,6 +55,7 @@ export default function Home() {
   const [showFileExplorer, setShowFileExplorer] = useState(false);
   const [showAgentTab, setShowAgentTab] = useState(true);
   const [vaultRoot, setVaultRoot] = useState<string | null>(null);
+  const [showSavedFlash, setShowSavedFlash] = useState(false);
 
   // Split pane state
   const [splitTabIndex, setSplitTabIndex] = useState<number | null>(null);
@@ -140,6 +140,17 @@ export default function Home() {
     filePath: doc.filePath,
     openSearch: () => setShowSearch(true),
   });
+
+  // Flash "Saved" briefly after save completes
+  const prevSavingRef = useRef(doc.isSaving);
+  useEffect(() => {
+    if (prevSavingRef.current && !doc.isSaving) {
+      setShowSavedFlash(true);
+      const t = setTimeout(() => setShowSavedFlash(false), 2000);
+      return () => clearTimeout(t);
+    }
+    prevSavingRef.current = doc.isSaving;
+  }, [doc.isSaving]);
 
   // When exiting edit mode, update vim cursor to match where user was editing
   const prevEditMode = useRef(doc.isEditMode);
@@ -354,7 +365,7 @@ export default function Home() {
   });
 
   const chat = useChat(doc.filePath, claude.model);
-  const [chatDraft, setChatDraft] = useState('');
+  const chatDraftRef = useRef('');
 
   // Initial load — wait until path restoration finishes
   // Also sync tab 0 to the restored path (it was initialized with the default before restore)
@@ -591,7 +602,7 @@ export default function Home() {
       // Cmd+Enter: send comments to Claude (when on comments tab with pending comments, not in comment drawer)
       if (e.metaKey && e.key === 'Enter' && !showCommentInput) {
         e.preventDefault();
-        if (activeTab === 'comments' && comments.filter(c => c.status === 'pending').length > 0 && !claude.isSending) {
+        if (activeTab === 'edits' && comments.filter(c => c.status === 'pending').length > 0 && !claude.isSending) {
           claude.sendToClaude();
         }
       }
@@ -1249,8 +1260,8 @@ export default function Home() {
               isEditMode={doc.isEditMode}
               editorRef={editorRef}
             />
-          ) : activeTab === 'comments' ? (
-            <CommentsTab
+          ) : activeTab === 'edits' ? (
+            <EditsTab
               comments={comments}
               isSending={claude.isSending}
               selectedText={selectedText}
@@ -1272,14 +1283,10 @@ export default function Home() {
               model={claude.model}
               setModel={claude.setModel}
               hasChanges={!!(claude.beforeMarkdown && claude.afterMarkdown)}
-            />
-          ) : activeTab === 'output' ? (
-            <OutputTab
               claudeOutput={claude.claudeOutput}
               streamOutput={claude.streamOutput}
               setStreamOutput={claude.setStreamOutput}
               isStreaming={claude.isStreaming}
-              isSending={claude.isSending}
               showLastOutput={claude.showLastOutput}
               setShowLastOutput={claude.setShowLastOutput}
               streamRef={claude.streamRef}
@@ -1302,10 +1309,12 @@ export default function Home() {
               onSelectSession={chat.selectSession}
               onSendMessage={chat.sendMessage}
               onDeleteSession={chat.deleteSession}
-              draft={chatDraft}
-              onDraftChange={setChatDraft}
+              draft={chatDraftRef.current}
+              onDraftChange={(v: string) => { chatDraftRef.current = v; }}
               currentDir={doc.filePath.substring(0, doc.filePath.lastIndexOf('/'))}
               vaultRoot={vaultRoot}
+              model={claude.model}
+              setModel={claude.setModel}
             />
           )}
         </Sidebar>}
@@ -1391,6 +1400,15 @@ export default function Home() {
           {vim.enabled && vim.mode === 'NORMAL' && (
             <span>Ln {vim.blockIndex + 1}:{vim.wordIndex + 1}</span>
           )}
+          {doc.isSaving ? (
+            <span style={{ opacity: 1, color: 'var(--color-amber)' }}>Saving...</span>
+          ) : doc.isEditMode ? (
+            <span style={{ opacity: 1 }}>
+              <span style={{ color: 'var(--color-amber)' }}>●</span> Modified
+            </span>
+          ) : showSavedFlash ? (
+            <span style={{ opacity: 1, color: 'var(--color-success)' }}>✓ Saved</span>
+          ) : null}
           <span>{doc.filePath.split('/').pop()}</span>
           <span
             onClick={vim.toggleEnabled}

@@ -396,13 +396,55 @@ function registerIpcHandlers() {
   );
 
   ipcMain.handle('claude:list-mcps', async () => {
+    const mcps: { name: string; source?: string }[] = [];
+    const seen = new Set<string>();
+
+    // 1. ~/.claude.json (primary MCP config location)
+    try {
+      const claudeJson = path.join(os.homedir(), '.claude.json');
+      const config = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'));
+      for (const name of Object.keys(config.mcpServers || {})) {
+        if (!seen.has(name)) { seen.add(name); mcps.push({ name, source: 'global' }); }
+      }
+    } catch { /* ignore */ }
+
+    // 2. ~/.claude/settings.json mcpServers (legacy/fallback)
     try {
       const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-      return Object.keys(settings.mcpServers || {}).map(name => ({ name }));
-    } catch {
-      return [];
-    }
+      for (const name of Object.keys(settings.mcpServers || {})) {
+        if (!seen.has(name)) { seen.add(name); mcps.push({ name, source: 'global' }); }
+      }
+    } catch { /* ignore */ }
+
+    // 2. Installed plugin .mcp.json files
+    try {
+      const cachePath = path.join(os.homedir(), '.claude', 'plugins', 'cache');
+      if (fs.existsSync(cachePath)) {
+        for (const marketplace of fs.readdirSync(cachePath)) {
+          const mpDir = path.join(cachePath, marketplace);
+          if (!fs.statSync(mpDir).isDirectory()) continue;
+          for (const plugin of fs.readdirSync(mpDir)) {
+            const pluginDir = path.join(mpDir, plugin);
+            if (!fs.statSync(pluginDir).isDirectory()) continue;
+            // Find versioned subdirectory
+            for (const version of fs.readdirSync(pluginDir)) {
+              const mcpFile = path.join(pluginDir, version, '.mcp.json');
+              if (fs.existsSync(mcpFile)) {
+                try {
+                  const mcpConfig = JSON.parse(fs.readFileSync(mcpFile, 'utf-8'));
+                  for (const name of Object.keys(mcpConfig)) {
+                    if (!seen.has(name)) { seen.add(name); mcps.push({ name, source: plugin }); }
+                  }
+                } catch { /* ignore malformed */ }
+              }
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    return mcps;
   });
 
   ipcMain.handle('claude:cancel', async () => {

@@ -24,7 +24,7 @@ end helmIsRunning
 
 on launchHelm()
 	if not helmIsRunning() then
-		do shell script "cd $HOME/Developer/doc-editor && /opt/homebrew/bin/npm run electron:dev > /dev/null 2>&1 &"
+		do shell script "export PATH=/opt/homebrew/bin:$HOME/Developer/doc-editor/node_modules/.bin:$PATH && cd $HOME/Developer/doc-editor && npm run electron:dev > /dev/null 2>&1 &"
 	end if
 end launchHelm
 

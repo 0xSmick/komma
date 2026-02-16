@@ -21,6 +21,8 @@ interface ChatTabProps {
   onDraftChange?: (value: string) => void;
   currentDir?: string;
   vaultRoot?: string | null;
+  model: string;
+  setModel: (model: string) => void;
 }
 
 export default function ChatTab({
@@ -39,6 +41,8 @@ export default function ChatTab({
   onDraftChange,
   currentDir,
   vaultRoot,
+  model,
+  setModel,
 }: ChatTabProps) {
   const [inputValue, setInputValue] = useState(draft || '');
   const [includeContext, setIncludeContext] = useState(false);
@@ -116,7 +120,7 @@ export default function ChatTab({
   };
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Header with New Chat + Session selector */}
       <div className="flex items-center gap-2 mb-3 flex-shrink-0">
         <button
@@ -211,17 +215,20 @@ export default function ChatTab({
       )}
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto mb-3 space-y-3" style={{ minHeight: 0 }}>
+      <div
+        className={`overflow-y-auto mb-3 ${messages.length === 0 && !isStreaming ? 'flex items-center justify-center py-8' : 'flex-1 space-y-3'}`}
+        style={{ minHeight: 0 }}
+      >
         {messages.length === 0 && !isStreaming ? (
           <div
-            className="text-sm text-center py-8"
+            className="text-sm text-center"
             style={{ color: 'var(--color-ink-faded)' }}
           >
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-3 opacity-50">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-2 opacity-40">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            <p>Start a conversation about your document</p>
-            <p className="text-xs mt-1">Select text for context, then ask a question. Type @ to reference docs.</p>
+            <p className="text-xs">Ask about this document</p>
+            <p className="text-[11px] mt-0.5 opacity-60">Type @ to reference other docs</p>
           </div>
         ) : (
           <>
@@ -375,21 +382,46 @@ export default function ChatTab({
             background: 'transparent',
           }}
         />
-        <button
-          onClick={handleSend}
-          disabled={!inputValue.trim() || isStreaming}
-          aria-label="Send message"
-          className="p-1.5 rounded-lg transition-all flex-shrink-0"
-          style={{
-            background: inputValue.trim() && !isStreaming ? 'var(--color-accent)' : 'var(--color-border)',
-            color: inputValue.trim() && !isStreaming ? 'var(--color-vim-insert-fg)' : 'var(--color-ink-faded)',
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
-        </button>
+        <div className="flex flex-col items-center gap-1 flex-shrink-0">
+          <button
+            onClick={handleSend}
+            disabled={!inputValue.trim() || isStreaming}
+            aria-label="Send message"
+            className="p-1.5 rounded-lg transition-all"
+            style={{
+              background: inputValue.trim() && !isStreaming ? 'var(--color-accent)' : 'var(--color-border)',
+              color: inputValue.trim() && !isStreaming ? 'var(--color-vim-insert-fg)' : 'var(--color-ink-faded)',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+          <div className="relative">
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="appearance-none text-[10px] font-medium pl-1 pr-3 py-0 rounded cursor-pointer outline-none"
+              style={{
+                background: 'transparent',
+                color: 'var(--color-ink-faded)',
+                border: 'none',
+              }}
+            >
+              <option value="haiku">Haiku</option>
+              <option value="sonnet">Sonnet</option>
+              <option value="opus">Opus</option>
+            </select>
+            <svg
+              width="6" height="6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: 'var(--color-ink-faded)' }}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </div>
+        </div>
 
         {/* Mention Autocomplete Dropdown */}
         <MentionDropdown

@@ -32,7 +32,7 @@ declare global {
           refs?: VaultRefs
         ): Promise<void>;
         cancel(): Promise<void>;
-        listMcps(): Promise<{ name: string }[]>;
+        listMcps(): Promise<{ name: string; source?: string }[]>;
         onStream(
           callback: (data: { type: 'edit' | 'chat'; content: string }) => void
         ): () => void;

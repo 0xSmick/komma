@@ -62,12 +62,17 @@ export function useAtMentions({ currentDir, vaultRoot }: UseAtMentionsOptions) {
       } catch { /* ignore */ }
     }
 
-    // MCP tools
+    // MCP servers (from global settings + installed plugins)
     try {
       const mcps = await window.electronAPI?.claude.listMcps();
       if (mcps) {
         for (const m of mcps) {
-          items.push({ type: 'mcp', name: m.name, display: m.name });
+          items.push({
+            type: 'mcp',
+            name: m.name,
+            display: m.name,
+            description: m.source ? `MCP · ${m.source}` : 'MCP server',
+          });
         }
       }
     } catch { /* ignore */ }
