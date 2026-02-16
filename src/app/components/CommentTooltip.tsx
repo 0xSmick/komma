@@ -17,8 +17,8 @@ export default function CommentTooltip({ show, position, onAddComment }: Comment
       style={{
         left: Math.min(position.x - 70, window.innerWidth - 160),
         top: position.y,
-        background: 'var(--color-ink)',
-        color: 'var(--color-paper)',
+        background: 'var(--color-overlay, #1a1a2e)',
+        color: '#fff',
         boxShadow: 'var(--shadow-lg)',
         fontFamily: 'var(--font-sans)'
       }}

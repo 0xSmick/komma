@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 
 interface SidebarProps {
-  activeTab: 'comments' | 'output' | 'chat';
-  setActiveTab: (tab: 'comments' | 'output' | 'chat') => void;
+  activeTab: 'toc' | 'comments' | 'output' | 'chat';
+  setActiveTab: (tab: 'toc' | 'comments' | 'output' | 'chat') => void;
   commentsCount: number;
   isSending: boolean;
   isChatStreaming?: boolean;
@@ -74,6 +74,24 @@ export default function Sidebar({
         className="flex border-b flex-shrink-0"
         style={{ borderColor: 'var(--color-border)' }}
       >
+        <button
+          onClick={() => setActiveTab('toc')}
+          className="flex-1 py-3 px-4 text-sm font-medium flex items-center justify-center gap-2 transition-all relative"
+          style={{
+            color: activeTab === 'toc' ? 'var(--color-accent)' : 'var(--color-ink-faded)',
+            background: activeTab === 'toc' ? 'var(--color-surface)' : 'transparent'
+          }}
+        >
+          {activeTab === 'toc' && (
+            <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-t" style={{ background: 'var(--color-accent)', boxShadow: '0 0 8px var(--color-accent-glow)' }} />
+          )}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="15" y2="12" />
+            <line x1="3" y1="18" x2="18" y2="18" />
+          </svg>
+          TOC
+        </button>
         <button
           onClick={() => setActiveTab('comments')}
           className="flex-1 py-3 px-4 text-sm font-medium flex items-center justify-center gap-2 transition-all relative"

@@ -109,34 +109,22 @@ export function useClaude({
     const requestId = Date.now().toString();
     const changelogId = await createChangelog(filePath, requestId, JSON.stringify(pendingComments));
 
-    // Collect @ references from all pending comments
-    const docRefs = new Set<string>();
-    const mcpRefs = new Set<string>();
+    // Parse refs from all pending comments
+    const refs: { docs: string[]; mcps: string[]; vault: boolean; architecture: boolean } = {
+      docs: [], mcps: [], vault: false, architecture: false,
+    };
     for (const c of pendingComments) {
+      if (/@vault(?:\s|$)/.test(c.comment)) refs.vault = true;
+      if (/@architecture(?:\s|$)/.test(c.comment)) refs.architecture = true;
       const mcpMatches = c.comment.matchAll(/@mcp:([\w-]+)/g);
-      for (const m of mcpMatches) mcpRefs.add(m[1]);
-      const docMatches = c.comment.matchAll(/@([\w.-]+\.md)/g);
-      for (const m of docMatches) docRefs.add(m[1]);
-    }
-
-    // Fetch content of referenced docs
-    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
-    let refContext = '';
-    for (const docName of docRefs) {
-      try {
-        const res = await fetch(`/api/file?path=${encodeURIComponent(dir + '/' + docName)}`);
-        const data = await res.json();
-        if (data.content) {
-          refContext += `\n\nReference document (${docName}):\n\`\`\`\n${data.content}\n\`\`\``;
-        }
-      } catch {
-        // skip unreachable docs
-      }
+      for (const m of mcpMatches) { if (!refs.mcps.includes(m[1])) refs.mcps.push(m[1]); }
+      const docMatches = c.comment.matchAll(/@((?:[\w.-]+\/)*[\w.-]+\.md)/g);
+      for (const m of docMatches) { if (!refs.docs.includes(m[1])) refs.docs.push(m[1]); }
     }
 
     const prompt = `Update the file ${filePath} with these changes:\n\n${pendingComments.map((c, i) =>
       `${i + 1}. Selected text:\n"""\n${c.selectedText}\n"""\nInstruction: ${c.comment}`
-    ).join('\n\n')}\n\nMake the changes directly to the file. Be precise and only change what's requested.${refContext}`;
+    ).join('\n\n')}\n\nMake the changes directly to the file. Be precise and only change what's requested.`;
 
     await patchComments(requestId);
 
@@ -190,7 +178,7 @@ export function useClaude({
           }
         });
 
-        await api.claude.sendEdit(prompt, filePath, model);
+        await api.claude.sendEdit(prompt, filePath, model, refs);
       } catch (error) {
         console.error('Failed to send to Claude via IPC:', error);
         setClaudeOutput('Error: Failed to communicate with Claude Code');

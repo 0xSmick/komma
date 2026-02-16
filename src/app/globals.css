@@ -36,6 +36,9 @@
   --shadow-lg: 0 8px 24px rgba(26, 26, 46, 0.12);
   --shadow-glow: 0 0 20px var(--color-accent-glow);
 
+  /* Floating overlays (always dark) */
+  --color-overlay: #1A1A2E;
+
   /* Vim mode bar */
   --color-vim-normal-bg: var(--color-paper-dark);
   --color-vim-normal-fg: var(--color-ink-faded);
@@ -79,6 +82,9 @@
   /* Borders — barely visible, like Linear */
   --color-border: #2A2A2E;
   --color-border-dark: #353539;
+
+  /* Floating overlays (stays dark in dark mode too) */
+  --color-overlay: #212126;
 
   /* Shadows — subtle, no colored glow */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -161,6 +167,28 @@ body {
   font-size: 1.125rem;
   line-height: 1.8;
 }
+
+/* Dark mode: override remaining Tailwind prose defaults that could bleed light backgrounds */
+[data-theme="dark"] .prose-editorial {
+  --tw-prose-pre-bg: #18181C;
+  --tw-prose-pre-code: #e8e4dc;
+  --tw-prose-captions: var(--color-ink-faded);
+  --tw-prose-kbd: var(--color-ink);
+  --tw-prose-kbd-shadows: rgba(238, 238, 240, 0.1);
+}
+
+/* Dark mode: neutralize any stray backgrounds on table elements inside the editor */
+[data-theme="dark"] .ProseMirror td,
+[data-theme="dark"] .ProseMirror th {
+  background-color: transparent;
+}
+[data-theme="dark"] .ProseMirror th {
+  background-color: var(--color-paper-dark);
+}
+[data-theme="dark"] .ProseMirror .tableWrapper {
+  background: transparent;
+}
+
 
 .prose-editorial strong,
 .prose-editorial b {
@@ -382,6 +410,11 @@ body {
 }
 
 /* TipTap table editing styles */
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  background: transparent;
+}
+
 .ProseMirror table {
   border-collapse: collapse;
   margin: 1em 0;
@@ -398,6 +431,7 @@ body {
   padding: 0.5em 0.75em;
   position: relative;
   vertical-align: top;
+  background-color: transparent;
 }
 
 .ProseMirror th {
@@ -417,7 +451,7 @@ body {
   z-index: 2;
 }
 [data-theme="dark"] .ProseMirror .selectedCell:after {
-  background: rgba(34, 211, 238, 0.15);
+  background: rgba(139, 123, 245, 0.25);
 }
 
 .ProseMirror .column-resize-handle {
@@ -452,6 +486,100 @@ body {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--color-border-dark), transparent);
   margin: 2.5em 0;
+}
+
+/* Images */
+.prose-editorial img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  margin: 1.5em 0;
+}
+
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  cursor: default;
+}
+
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════
+   IMAGE NODE VIEW — resize, crop, align
+   ═══════════════════════════════════════════ */
+.image-node-view {
+  position: relative;
+  margin: 1.5em 0;
+  clear: both;
+}
+
+.image-node-view[data-align="left"] {
+  text-align: left;
+}
+.image-node-view[data-align="center"] {
+  text-align: center;
+}
+.image-node-view[data-align="right"] {
+  text-align: right;
+}
+
+.image-resize-handle {
+  transition: opacity 0.15s ease;
+  opacity: 0.8;
+}
+.image-resize-handle:hover {
+  opacity: 1;
+  transform: scale(1.3);
+}
+
+.image-toolbar {
+  animation: fadeIn 0.15s ease-out;
+}
+
+.image-crop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  animation: fadeInBackdrop 0.2s ease-out;
+}
+
+.image-crop-btn {
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  transition: all 0.15s ease;
+}
+
+.image-crop-btn-cancel {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+}
+.image-crop-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.image-crop-btn-apply {
+  background: var(--color-accent);
+  color: white;
+}
+.image-crop-btn-apply:hover {
+  background: var(--color-accent-hover);
+}
+[data-theme="dark"] .image-crop-btn-apply {
+  color: #131316;
 }
 
 /* ═══════════════════════════════════════════
@@ -644,6 +772,7 @@ body {
   box-shadow: var(--shadow-lg);
 }
 
+
 /* ═══════════════════════════════════════════
    VIM BLOCK CURSOR — highlights current block in NORMAL mode
    ═══════════════════════════════════════════ */
@@ -684,4 +813,145 @@ body {
   pointer-events: none;
   z-index: 10;
   border-radius: 1px;
+}
+
+/* ═══════════════════════════════════════════
+   DOC LAUNCHER — template cards & seed chips
+   ═══════════════════════════════════════════ */
+.template-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 16px;
+  border-radius: 12px;
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.template-card:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  box-shadow: var(--shadow-md), 0 0 12px var(--color-accent-glow);
+  transform: translateY(-2px);
+}
+
+.template-card-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-light);
+  box-shadow: 0 0 0 3px var(--color-accent-glow);
+}
+
+.seed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+}
+
+.seed-chip button {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.seed-chip button:hover {
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════
+   SPLIT PANES
+   ═══════════════════════════════════════════ */
+.split-resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: var(--color-border);
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.split-resize-handle:hover,
+.split-resize-handle:active {
+  background: var(--color-accent);
+}
+
+.split-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+/* ═══════════════════════════════════════════
+   TABLE OF CONTENTS
+   ═══════════════════════════════════════════ */
+.toc-nav {
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+.toc-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toc-item:hover {
+  color: var(--color-ink);
+  background: var(--color-accent-subtle);
+}
+
+.toc-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toc-level-1 {
+  font-weight: 600;
+  color: var(--color-ink);
+  font-size: 0.875rem;
+}
+
+.toc-level-2 {
+  font-weight: 500;
+  color: var(--color-ink-muted);
+}
+
+.toc-level-3 {
+  font-weight: 400;
+  color: var(--color-ink-faded);
+  font-size: 0.75rem;
+}
+
+.toc-active {
+  color: var(--color-accent) !important;
+  background: var(--color-accent-subtle);
+  border-left-color: var(--color-accent);
 }

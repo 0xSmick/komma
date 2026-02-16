@@ -17,6 +17,21 @@ export function useDocument() {
   const [frontmatter, setFrontmatter] = useState<ParsedFrontmatter | null>(null);
   const rawFrontmatterRef = useRef<string | null>(null);
 
+  // Restore last opened document from SQLite on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/last-document');
+        const data = await res.json();
+        if (data.filePath && data.filePath !== filePath) {
+          setFilePath(data.filePath);
+        }
+      } catch {
+        // DB not ready yet on first launch — use default
+      }
+    })();
+  }, []);
+
   // Ref tracks latest markdown synchronously (for toggleEditMode to read after setMarkdown)
   const markdownRef = useRef<string>('');
   markdownRef.current = markdown;

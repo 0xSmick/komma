@@ -1,6 +1,6 @@
 'use client';
 
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
@@ -8,6 +8,8 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
+import ImageNodeView from './ImageNodeView';
 import { useEffect, useRef, useCallback, useState } from 'react';
 
 interface RichEditorProps {
@@ -31,21 +33,29 @@ const BubbleButton = ({
   isActive: boolean;
   title: string;
   children: React.ReactNode;
-}) => (
-  <button
-    onMouseDown={(e) => { e.preventDefault(); onClick(); }}
-    title={title}
-    className="p-1.5 rounded transition-colors"
-    style={{
-      background: isActive ? 'rgba(255,255,255,0.2)' : 'transparent',
-      color: isActive ? '#fff' : 'rgba(255,255,255,0.7)',
-    }}
-    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = '#fff'; }}
-    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
-  >
-    {children}
-  </button>
-);
+}) => {
+  const [showTip, setShowTip] = useState(false);
+  return (
+    <div className="relative" onMouseEnter={() => setShowTip(true)} onMouseLeave={() => setShowTip(false)}>
+      <button
+        onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+        className="p-1.5 rounded transition-colors"
+        style={{
+          background: isActive ? 'rgba(255,255,255,0.2)' : 'transparent',
+          color: isActive ? '#fff' : 'rgba(255,255,255,0.7)',
+        }}
+      >
+        {children}
+      </button>
+      {showTip && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-md text-[11px] font-medium whitespace-nowrap pointer-events-none z-50"
+          style={{ background: 'var(--color-ink)', color: 'var(--color-paper)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+          {title}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function RichEditor({ content, onChange, initialBlockIndex, initialWordIndex, isVisible, onCursorBlockChange, onExit, onEditorReady }: RichEditorProps) {
   const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -58,7 +68,9 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
   onEditorReadyRef.current = onEditorReady;
 
   const [bubblePos, setBubblePos] = useState<{ x: number; y: number } | null>(null);
+  const [tableToolbarPos, setTableToolbarPos] = useState<{ x: number; y: number } | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const tableToolbarRef = useRef<HTMLDivElement>(null);
   const onCursorBlockChangeRef = useRef(onCursorBlockChange);
   onCursorBlockChangeRef.current = onCursorBlockChange;
 
@@ -78,6 +90,18 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
       TableCell,
       Underline,
       Link.configure({ openOnClick: false }),
+      Image.extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            width: { default: null, renderHTML: attrs => attrs.width ? { width: attrs.width } : {} },
+            align: { default: 'center', renderHTML: attrs => ({ 'data-align': attrs.align }) },
+          };
+        },
+        addNodeView() {
+          return ReactNodeViewRenderer(ImageNodeView);
+        },
+      }).configure({ inline: false, allowBase64: true }),
     ],
     content,
     immediatelyRender: false,
@@ -109,25 +133,93 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
         }
       }
 
+      // Table context toolbar — show when cursor is in a table
+      if (editor.isActive('table')) {
+        const view = editor.view;
+        const coords = view.coordsAtPos(from);
+        // Find the table DOM element to position toolbar at its top-right
+        const domAtPos = view.domAtPos(from);
+        let tableEl: HTMLElement | null = null;
+        let el: Node | null = domAtPos.node;
+        while (el) {
+          if (el instanceof HTMLElement && el.tagName === 'TABLE') { tableEl = el; break; }
+          el = el.parentNode;
+        }
+        if (tableEl) {
+          const tableRect = tableEl.getBoundingClientRect();
+          const ttW = tableToolbarRef.current?.offsetWidth ?? 300;
+          const ttHalf = ttW / 2 + 12;
+          const ttX = Math.max(ttHalf, Math.min(tableRect.left + tableRect.width / 2, window.innerWidth - ttHalf));
+          setTableToolbarPos({ x: ttX, y: tableRect.top - 8 });
+        }
+      } else {
+        setTableToolbarPos(null);
+      }
+
       if (from === to) {
         setBubblePos(null);
         return;
       }
-      // Get bounding rect of selection
+      // Get bounding rect of selection (viewport coords)
       const view = editor.view;
       const start = view.coordsAtPos(from);
       const end = view.coordsAtPos(to);
-      const mainEl = editorContainerRef.current?.closest('main');
-      if (!mainEl) return;
-      const mainRect = mainEl.getBoundingClientRect();
+      const rawX = (start.left + end.right) / 2;
+      // Measure toolbar width to clamp; fallback to 350 if not yet rendered
+      const toolbarW = bubbleRef.current?.offsetWidth ?? 350;
+      const half = toolbarW / 2 + 12;
+      const clampedX = Math.max(half, Math.min(rawX, window.innerWidth - half));
       setBubblePos({
-        x: (start.left + end.right) / 2 - mainRect.left,
-        y: start.top - mainRect.top - 8,
+        x: clampedX,
+        y: start.top - 8,
       });
     },
     editorProps: {
       attributes: {
         class: 'prose prose-editorial max-w-none min-h-[calc(100vh-14rem)] focus:outline-none',
+      },
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith('image/')) {
+            event.preventDefault();
+            const file = item.getAsFile();
+            if (!file) return false;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const src = e.target?.result as string;
+              view.dispatch(view.state.tr.replaceSelectionWith(
+                view.state.schema.nodes.image.create({ src })
+              ));
+            };
+            reader.readAsDataURL(file);
+            return true;
+          }
+        }
+        return false;
+      },
+      handleDrop: (view, event) => {
+        const files = event.dataTransfer?.files;
+        if (!files?.length) return false;
+        for (const file of Array.from(files)) {
+          if (file.type.startsWith('image/')) {
+            event.preventDefault();
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const src = e.target?.result as string;
+              const pos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+              if (pos) {
+                view.dispatch(view.state.tr.insert(pos.pos,
+                  view.state.schema.nodes.image.create({ src })
+                ));
+              }
+            };
+            reader.readAsDataURL(file);
+            return true;
+          }
+        }
+        return false;
       },
       handleKeyDown: (view, event) => {
         // jk escape sequence: j then k within 200ms exits edit mode
@@ -185,6 +277,7 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
     if (!isVisible) {
       wasVisible.current = false;
       setBubblePos(null);
+      setTableToolbarPos(null);
       return;
     }
     if (wasVisible.current) return;
@@ -249,7 +342,7 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
       {editor && bubblePos && (
         <div
           ref={bubbleRef}
-          className="absolute z-20 animate-fade-in"
+          className="fixed z-20 animate-fade-in"
           style={{
             left: bubblePos.x,
             top: bubblePos.y,
@@ -260,7 +353,7 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
           <div
             className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg"
             style={{
-              background: 'var(--color-ink, #1a1a2e)',
+              background: 'var(--color-overlay, #1a1a2e)',
               border: '1px solid rgba(255,255,255,0.1)',
               boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
             }}
@@ -287,6 +380,16 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
               </svg>
             </BubbleButton>
             <BubbleButton
+              onClick={() => editor.chain().focus().toggleUnderline().run()}
+              isActive={editor.isActive('underline')}
+              title="Underline (⌘U)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3"/>
+                <line x1="4" y1="21" x2="20" y2="21"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton
               onClick={() => editor.chain().focus().toggleStrike().run()}
               isActive={editor.isActive('strike')}
               title="Strikethrough"
@@ -295,6 +398,39 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
                 <path d="M17.3 4.9c-2.3-.6-4.4-1-6.2-.9-2.7 0-5.3.7-5.3 3.6 0 1.5 1.1 2.5 3.3 3.1"/>
                 <line x1="4" y1="12" x2="20" y2="12"/>
                 <path d="M17.3 13.1c.9.4 1.7 1.1 1.7 2.3 0 2.9-2.7 3.6-5.3 3.6-2.3 0-4.7-.5-6.7-1.5"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton
+              onClick={() => {
+                const url = window.prompt('URL');
+                if (url) editor.chain().focus().setLink({ href: url }).run();
+                else editor.chain().focus().unsetLink().run();
+              }}
+              isActive={editor.isActive('link')}
+              title="Link (⌘K)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton
+              onClick={() => editor.chain().focus().toggleCode().run()}
+              isActive={editor.isActive('code')}
+              title="Inline Code"
+            >
+              <span className="text-xs font-mono font-bold">{'{}'}</span>
+            </BubbleButton>
+            <BubbleButton
+              onClick={() => editor.chain().focus().unsetAllMarks().run()}
+              isActive={false}
+              title="Clear Formatting"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 7V4h16v3"/>
+                <path d="M9 20h6"/>
+                <path d="M12 4v16"/>
+                <line x1="4" y1="20" x2="20" y2="4" strokeWidth="1.5" strokeDasharray="2 2"/>
               </svg>
             </BubbleButton>
 
@@ -370,6 +506,146 @@ export default function RichEditor({ content, onChange, initialBlockIndex, initi
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="16 18 22 12 16 6"/>
                 <polyline points="8 6 2 12 8 18"/>
+              </svg>
+            </BubbleButton>
+
+            <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.2)' }} />
+
+            <BubbleButton
+              onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+              isActive={false}
+              title="Insert Table"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="3" y1="15" x2="21" y2="15"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+                <line x1="15" y1="3" x2="15" y2="21"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton
+              onClick={() => editor.chain().focus().setHorizontalRule().run()}
+              isActive={false}
+              title="Horizontal Rule"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="12" x2="21" y2="12"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = () => {
+                  const file = input.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                    const src = e.target?.result as string;
+                    editor.chain().focus().setImage({ src }).run();
+                  };
+                  reader.readAsDataURL(file);
+                };
+                input.click();
+              }}
+              isActive={false}
+              title="Insert Image"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <path d="m21 15-5-5L5 21"/>
+              </svg>
+            </BubbleButton>
+          </div>
+        </div>
+      )}
+
+      {/* Table context toolbar — appears when cursor is inside a table */}
+      {editor && tableToolbarPos && (
+        <div
+          ref={tableToolbarRef}
+          className="fixed z-20 animate-fade-in"
+          style={{
+            left: tableToolbarPos.x,
+            top: tableToolbarPos.y,
+            transform: 'translate(-50%, -100%)',
+            pointerEvents: 'auto',
+          }}
+        >
+          <div
+            className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg"
+            style={{
+              background: 'var(--color-overlay, #1a1a2e)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+            }}
+          >
+            <BubbleButton onClick={() => editor.chain().focus().addColumnBefore().run()} isActive={false} title="Add Column Before">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="6" y="3" width="15" height="18" rx="2"/><line x1="11" y1="3" x2="11" y2="21"/>
+                <line x1="3" y1="9" x2="3" y2="15"/><line x1="0" y1="12" x2="6" y2="12"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton onClick={() => editor.chain().focus().addColumnAfter().run()} isActive={false} title="Add Column After">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="15" height="18" rx="2"/><line x1="13" y1="3" x2="13" y2="21"/>
+                <line x1="21" y1="9" x2="21" y2="15"/><line x1="18" y1="12" x2="24" y2="12"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton onClick={() => editor.chain().focus().deleteColumn().run()} isActive={false} title="Delete Column">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="6" y="3" width="12" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>
+              </svg>
+            </BubbleButton>
+
+            <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.2)' }} />
+
+            <BubbleButton onClick={() => editor.chain().focus().addRowBefore().run()} isActive={false} title="Add Row Above">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="6" width="18" height="15" rx="2"/><line x1="3" y1="11" x2="21" y2="11"/>
+                <line x1="9" y1="3" x2="15" y2="3"/><line x1="12" y1="0" x2="12" y2="6"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton onClick={() => editor.chain().focus().addRowAfter().run()} isActive={false} title="Add Row Below">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="15" rx="2"/><line x1="3" y1="13" x2="21" y2="13"/>
+                <line x1="9" y1="21" x2="15" y2="21"/><line x1="12" y1="18" x2="12" y2="24"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton onClick={() => editor.chain().focus().deleteRow().run()} isActive={false} title="Delete Row">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="6" width="18" height="12" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>
+              </svg>
+            </BubbleButton>
+
+            <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.2)' }} />
+
+            <BubbleButton onClick={() => editor.chain().focus().mergeCells().run()} isActive={false} title="Merge Cells">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/>
+                <polyline points="8 10 12 6 16 10"/><polyline points="8 14 12 18 16 14"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton onClick={() => editor.chain().focus().splitCell().run()} isActive={false} title="Split Cell">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/>
+                <polyline points="8 6 12 10 16 6"/><polyline points="8 18 12 14 16 18"/>
+              </svg>
+            </BubbleButton>
+            <BubbleButton onClick={() => editor.chain().focus().toggleHeaderRow().run()} isActive={false} title="Toggle Header Row">
+              <span className="text-xs font-bold">H</span>
+            </BubbleButton>
+
+            <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.2)' }} />
+
+            <BubbleButton onClick={() => editor.chain().focus().deleteTable().run()} isActive={false} title="Delete Table">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/>
+                <line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>
+                <line x1="5" y1="5" x2="19" y2="19" stroke="rgba(239,68,68,0.8)" strokeWidth="2"/>
               </svg>
             </BubbleButton>
           </div>

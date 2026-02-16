@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ChatSession, ChatMessage } from '../../hooks/useChat';
+import { useAtMentions } from '../../hooks/useAtMentions';
+import MentionDropdown from '../MentionDropdown';
 
 interface ChatTabProps {
   sessions: ChatSession[];
@@ -13,10 +15,12 @@ interface ChatTabProps {
   selectedText: string;
   onNewSession: () => void;
   onSelectSession: (sessionId: number) => void;
-  onSendMessage: (message: string, contextSelection?: string) => void;
+  onSendMessage: (message: string, contextSelection?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }) => void;
   onDeleteSession: (sessionId: number) => void;
   draft?: string;
   onDraftChange?: (value: string) => void;
+  currentDir?: string;
+  vaultRoot?: string | null;
 }
 
 export default function ChatTab({
@@ -33,12 +37,21 @@ export default function ChatTab({
   onDeleteSession,
   draft,
   onDraftChange,
+  currentDir,
+  vaultRoot,
 }: ChatTabProps) {
   const [inputValue, setInputValue] = useState(draft || '');
   const [includeContext, setIncludeContext] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const mentions = useAtMentions({ currentDir, vaultRoot });
+
+  // Fetch mention items on mount or when currentDir/vaultRoot changes
+  useEffect(() => {
+    mentions.fetchItems();
+  }, [currentDir, vaultRoot]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -52,22 +65,50 @@ export default function ChatTab({
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
       inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 120) + 'px';
+      // Detect @ mentions
+      const cursorPos = inputRef.current.selectionStart;
+      mentions.handleTextChange(value, cursorPos);
     }
   };
+
+  const insertMentionIntoInput = useCallback((item: typeof mentions.mentionItems[0]) => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+
+    const { newText, cursorPos } = mentions.insertMention(inputValue, item);
+    setInputValue(newText);
+    onDraftChange?.(newText);
+
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(cursorPos, cursorPos);
+    });
+  }, [inputValue, mentions, onDraftChange]);
 
   const handleSend = () => {
     const msg = inputValue.trim();
     if (!msg || isStreaming) return;
-    onSendMessage(msg, includeContext && selectedText ? selectedText : undefined);
+    const refs = mentions.parseRefs(inputValue);
+    onSendMessage(msg, includeContext && selectedText ? selectedText : undefined, refs);
     setInputValue('');
     onDraftChange?.('');
     setIncludeContext(false);
+    mentions.reset();
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Check mention dropdown first
+    const handled = mentions.handleMentionKeyDown(e);
+    if (handled) {
+      if ((e.key === 'Enter' || e.key === 'Tab') && mentions.selectedItem) {
+        insertMentionIntoInput(mentions.selectedItem);
+      }
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -180,7 +221,7 @@ export default function ChatTab({
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             <p>Start a conversation about your document</p>
-            <p className="text-xs mt-1">Select text for context, then ask a question</p>
+            <p className="text-xs mt-1">Select text for context, then ask a question. Type @ to reference docs.</p>
           </div>
         ) : (
           <>
@@ -312,7 +353,7 @@ export default function ChatTab({
 
       {/* Input area */}
       <div
-        className="flex-shrink-0 flex items-end gap-2 p-2 rounded-xl"
+        className="flex-shrink-0 relative flex items-end gap-2 p-2 rounded-xl"
         style={{
           background: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
@@ -323,7 +364,7 @@ export default function ChatTab({
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about this document..."
+          placeholder="Ask about this document... (type @ for refs)"
           disabled={isStreaming}
           rows={1}
           className="flex-1 resize-none text-sm outline-none"
@@ -349,6 +390,16 @@ export default function ChatTab({
             <polygon points="22 2 15 22 11 13 2 9 22 2" />
           </svg>
         </button>
+
+        {/* Mention Autocomplete Dropdown */}
+        <MentionDropdown
+          show={mentions.showMentions}
+          items={mentions.mentionItems}
+          selectedIndex={mentions.mentionIndex}
+          onSelect={insertMentionIntoInput}
+          onHover={mentions.setMentionIndex}
+          position="above"
+        />
       </div>
     </div>
   );

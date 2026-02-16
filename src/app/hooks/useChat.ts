@@ -69,7 +69,7 @@ export function useChat(documentPath: string, model?: string) {
 
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
-  const sendMessage = useCallback(async (message: string, contextSelection?: string) => {
+  const sendMessage = useCallback(async (message: string, contextSelection?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }) => {
     setIsStreaming(true);
     setStreamOutput('');
 
@@ -187,7 +187,8 @@ export function useChat(documentPath: string, model?: string) {
           activeSessionId,
           contextSelection || null,
           history,
-          model
+          model,
+          refs,
         );
       } else {
         // Fetch-based flow (Next.js API routes + file watcher)

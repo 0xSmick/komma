@@ -11,9 +11,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('menu:action', handler);
     return () => ipcRenderer.removeListener('menu:action', handler);
   },
+  vault: {
+    resolveRoot(fromPath: string): Promise<string | null> {
+      return ipcRenderer.invoke('vault:resolve-root', fromPath);
+    },
+    getIndex(fromPath: string): Promise<{ vaultRoot: string; files: Array<{ relativePath: string; firstLine: string }> } | null> {
+      return ipcRenderer.invoke('vault:get-index', fromPath);
+    },
+    listFiles(fromPath: string): Promise<string[]> {
+      return ipcRenderer.invoke('vault:list-files', fromPath);
+    },
+  },
   claude: {
-    sendEdit(prompt: string, filePath: string, model?: string): Promise<void> {
-      return ipcRenderer.invoke('claude:send-edit', prompt, filePath, model);
+    sendEdit(prompt: string, filePath: string, model?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }): Promise<void> {
+      return ipcRenderer.invoke('claude:send-edit', prompt, filePath, model, refs);
     },
     sendChat(
       message: string,
@@ -22,6 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       contextSelection: string | null,
       history: Array<{ role: string; content: string }>,
       model?: string,
+      refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean },
     ): Promise<void> {
       return ipcRenderer.invoke(
         'claude:send-chat',
@@ -31,6 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         contextSelection,
         history,
         model,
+        refs,
       );
     },
     cancel(): Promise<void> {

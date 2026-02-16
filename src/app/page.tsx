@@ -20,6 +20,7 @@ import Sidebar from './components/Sidebar';
 import CommentsTab from './components/tabs/CommentsTab';
 import OutputTab from './components/tabs/OutputTab';
 import ChatTab from './components/tabs/ChatTab';
+import TableOfContentsTab from './components/tabs/TableOfContentsTab';
 import CommentTooltip from './components/CommentTooltip';
 import CommentDrawer from './components/CommentDrawer';
 import FileBrowser from './components/FileBrowser';
@@ -47,13 +48,21 @@ export default function Home() {
   }, [doc.saveDocument]);
   const setIsEditMode = useCallback((mode: boolean) => doc.setIsEditMode(mode), [doc.setIsEditMode]);
 
-  const [activeTab, setActiveTab] = useState<'comments' | 'output' | 'chat'>('comments');
+  const [activeTab, setActiveTab] = useState<'toc' | 'comments' | 'output' | 'chat'>('comments');
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [showNewDocModal, setShowNewDocModal] = useState(false);
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showFileExplorer, setShowFileExplorer] = useState(false);
   const [showAgentTab, setShowAgentTab] = useState(true);
+  const [vaultRoot, setVaultRoot] = useState<string | null>(null);
+
+  // Split pane state
+  const [splitTabIndex, setSplitTabIndex] = useState<number | null>(null);
+  const [activePane, setActivePane] = useState<'primary' | 'split'>('primary');
+  const [splitPaneMarkdown, setSplitPaneMarkdown] = useState('');
+  const [splitPaneCommentCount, setSplitPaneCommentCount] = useState(0);
+  const [splitRatio, setSplitRatio] = useState(0.5);
 
   // Theme state (persisted to localStorage)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -92,6 +101,9 @@ export default function Home() {
   const [newComment, setNewComment] = useState('');
 
   const mainRef = useRef<HTMLElement>(null);
+  const splitMainRef = useRef<HTMLElement>(null);
+  const splitArticleRef = useRef<HTMLElement>(null);
+  const resizeRef = useRef<{ startX: number; startRatio: number } | null>(null);
   const savedSelectionRef = useRef<{ text: string; range: Range | null }>({ text: '', range: null });
 
   // Search state
@@ -349,6 +361,19 @@ export default function Home() {
     loadDocument();
   }, [loadDocument]);
 
+  // Resolve vault root when file path changes
+  useEffect(() => {
+    const resolveVault = async () => {
+      try {
+        const root = await window.electronAPI?.vault.resolveRoot(doc.filePath);
+        setVaultRoot(root ?? null);
+      } catch {
+        setVaultRoot(null);
+      }
+    };
+    resolveVault();
+  }, [doc.filePath]);
+
   // Load chat sessions when document changes
   useEffect(() => {
     chat.loadSessions(doc.filePath);
@@ -369,6 +394,13 @@ export default function Home() {
 
   const handleCloseTab = useCallback((index: number) => {
     if (tabs.length <= 1) return;
+    // If closing the tab that's in the split pane, close the split
+    if (splitTabIndex === index) {
+      setSplitTabIndex(null);
+      setActivePane('primary');
+    } else if (splitTabIndex !== null && index < splitTabIndex) {
+      setSplitTabIndex(splitTabIndex - 1);
+    }
     const newTabs = tabs.filter((_, i) => i !== index);
     setTabs(newTabs);
     if (index === activeTabIndex) {
@@ -376,7 +408,7 @@ export default function Home() {
     } else if (index < activeTabIndex) {
       setActiveTabIndex(activeTabIndex - 1);
     }
-  }, [tabs, activeTabIndex]);
+  }, [tabs, activeTabIndex, splitTabIndex]);
 
   const cancelComment = useCallback(() => {
     setShowCommentInput(false);
@@ -386,6 +418,89 @@ export default function Home() {
     savedSelectionRef.current = { text: '', range: null };
     window.getSelection()?.removeAllRanges();
   }, []);
+
+  // Split pane helpers
+  const fetchSplitPaneContent = useCallback(async (filePath: string) => {
+    try {
+      const res = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
+      const data = await res.json();
+      if (data.content) {
+        setSplitPaneMarkdown(data.content);
+      }
+    } catch {
+      setSplitPaneMarkdown('');
+    }
+    // Fetch comment count for the split pane
+    try {
+      const res = await fetch(`/api/comments?document_path=${encodeURIComponent(filePath)}`);
+      const data = await res.json();
+      setSplitPaneCommentCount(Array.isArray(data) ? data.length : 0);
+    } catch {
+      setSplitPaneCommentCount(0);
+    }
+  }, []);
+
+  const switchActivePane = useCallback(() => {
+    if (splitTabIndex === null) return;
+
+    if (activePane === 'primary') {
+      // Primary -> Split: cache primary's markdown, load split's doc
+      setSplitPaneMarkdown(doc.markdown);
+      setSplitPaneCommentCount(comments.length);
+      // Switch doc to split pane's path
+      const splitPath = tabs[splitTabIndex].path;
+      doc.setFilePath(splitPath);
+      setActivePane('split');
+    } else {
+      // Split -> Primary: cache split's markdown, load primary's doc
+      setSplitPaneMarkdown(doc.markdown);
+      setSplitPaneCommentCount(comments.length);
+      // Switch doc to primary pane's path
+      const primaryPath = tabs[activeTabIndex].path;
+      doc.setFilePath(primaryPath);
+      setActivePane('primary');
+    }
+  }, [splitTabIndex, activePane, doc.markdown, doc.setFilePath, tabs, activeTabIndex, comments.length]);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizeRef.current = { startX: e.clientX, startRatio: splitRatio };
+
+    const handleResizeMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const container = mainRef.current?.parentElement;
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
+      // Account for file explorer width
+      const explorerWidth = showFileExplorer ? 240 : 0;
+      const sidebarWidth = showAgentTab ? 380 : 0;
+      const availableWidth = containerRect.width - explorerWidth - sidebarWidth;
+      const delta = e.clientX - resizeRef.current.startX;
+      const newRatio = Math.max(0.25, Math.min(0.75, resizeRef.current.startRatio + delta / availableWidth));
+      setSplitRatio(newRatio);
+    };
+
+    const handleResizeEnd = () => {
+      resizeRef.current = null;
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+  }, [splitRatio, showFileExplorer, showAgentTab]);
+
+  // Compute pane header titles
+  const primaryTitle = splitTabIndex !== null
+    ? (activePane === 'primary' ? tabs[activeTabIndex] : tabs[splitTabIndex])?.title || ''
+    : '';
+  const splitTitle = splitTabIndex !== null
+    ? (activePane === 'primary' ? tabs[splitTabIndex] : tabs[activeTabIndex])?.title || ''
+    : '';
 
   // Keyboard shortcuts: Cmd+K for comment, Cmd+P for file browser, tab shortcuts, etc.
   useEffect(() => {
@@ -494,6 +609,33 @@ export default function Home() {
         handleSelectTab(nextIndex);
       }
 
+      // Cmd+\: toggle split (open split with next tab / close split)
+      if (e.metaKey && !e.shiftKey && e.code === 'Backslash') {
+        e.preventDefault();
+        if (splitTabIndex !== null) {
+          // Close split
+          setSplitTabIndex(null);
+          setActivePane('primary');
+        } else {
+          // Open split with next tab (or previous if on last)
+          const nextIdx = activeTabIndex < tabs.length - 1 ? activeTabIndex + 1 : (activeTabIndex > 0 ? activeTabIndex - 1 : null);
+          if (nextIdx !== null && nextIdx !== activeTabIndex) {
+            setSplitPaneMarkdown('');
+            setSplitTabIndex(nextIdx);
+            setActivePane('primary');
+            fetchSplitPaneContent(tabs[nextIdx].path);
+          }
+        }
+      }
+
+      // Cmd+Shift+\: switch active pane
+      if (e.metaKey && e.shiftKey && e.code === 'Backslash') {
+        e.preventDefault();
+        if (splitTabIndex !== null) {
+          switchActivePane();
+        }
+      }
+
       // Escape: close overlays, or exit edit mode, or delegate to vim
       if (e.key === 'Escape') {
         if (showSearch) {
@@ -520,7 +662,7 @@ export default function Home() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [doc.isEditMode, toggleEditMode, saveDocument, activeTabIndex, tabs.length, handleCloseTab, handleSelectTab, activeTab, comments, claude.isSending, claude.sendToClaude, showFileBrowser, showNewDocModal, showCommentInput, showSearch, cancelComment, closeSearch, vim.handleKeyDown, vim.selectionAnchor, vim.blockIndex, getBlocks]);
+  }, [doc.isEditMode, toggleEditMode, saveDocument, activeTabIndex, tabs.length, tabs, handleCloseTab, handleSelectTab, activeTab, comments, claude.isSending, claude.sendToClaude, showFileBrowser, showNewDocModal, showCommentInput, showSearch, cancelComment, closeSearch, vim.handleKeyDown, vim.selectionAnchor, vim.blockIndex, getBlocks, splitTabIndex, fetchSplitPaneContent, switchActivePane]);
 
   // Electron menu bar actions
   useEffect(() => {
@@ -553,10 +695,27 @@ export default function Home() {
         case 'prev-tab':
           setActiveTabIndex(prev => prev > 0 ? prev - 1 : tabs.length - 1);
           break;
+        case 'toggle-split':
+          if (splitTabIndex !== null) {
+            setSplitTabIndex(null);
+            setActivePane('primary');
+          } else {
+            const nextIdx = activeTabIndex < tabs.length - 1 ? activeTabIndex + 1 : (activeTabIndex > 0 ? activeTabIndex - 1 : null);
+            if (nextIdx !== null && nextIdx !== activeTabIndex) {
+              setSplitPaneMarkdown('');
+              setSplitTabIndex(nextIdx);
+              setActivePane('primary');
+              fetchSplitPaneContent(tabs[nextIdx].path);
+            }
+          }
+          break;
+        case 'switch-pane':
+          if (splitTabIndex !== null) switchActivePane();
+          break;
       }
     });
     return cleanup;
-  }, [doc.isEditMode, saveDocument, toggleEditMode, activeTabIndex, tabs.length, handleCloseTab, toggleTheme, claude.isSending, claude.sendToClaude, claude.setModel, comments]);
+  }, [doc.isEditMode, saveDocument, toggleEditMode, activeTabIndex, tabs.length, tabs, handleCloseTab, toggleTheme, claude.isSending, claude.sendToClaude, claude.setModel, comments, splitTabIndex, fetchSplitPaneContent, switchActivePane]);
 
   // Document-level selection handler
   useEffect(() => {
@@ -621,7 +780,7 @@ export default function Home() {
     setShowCommentInput(true);
   };
 
-  const handleAddComment = async (commentText: string, refs?: { docs: string[]; mcps: string[] }) => {
+  const handleAddComment = async (commentText: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }) => {
     if (commentText.trim() && selectedText) {
       await addComment(selectedText, commentText);
       setNewComment('');
@@ -830,8 +989,30 @@ export default function Home() {
       <TabBar
         tabs={tabs}
         activeIndex={activeTabIndex}
+        splitTabIndex={splitTabIndex}
         onSelectTab={handleSelectTab}
         onCloseTab={handleCloseTab}
+        onOpenInSplit={(index) => {
+          if (index === activeTabIndex) return;
+          setSplitPaneMarkdown('');
+          setSplitTabIndex(index);
+          setActivePane('primary');
+          fetchSplitPaneContent(tabs[index].path);
+        }}
+        onToggleSplit={() => {
+          if (splitTabIndex !== null) {
+            setSplitTabIndex(null);
+            setActivePane('primary');
+          } else {
+            const nextIdx = activeTabIndex < tabs.length - 1 ? activeTabIndex + 1 : (activeTabIndex > 0 ? activeTabIndex - 1 : null);
+            if (nextIdx !== null && nextIdx !== activeTabIndex) {
+              setSplitPaneMarkdown('');
+              setSplitTabIndex(nextIdx);
+              setActivePane('primary');
+              fetchSplitPaneContent(tabs[nextIdx].path);
+            }
+          }
+        }}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -855,15 +1036,34 @@ export default function Home() {
           </div>
         )}
 
-        {/* Main document area */}
+        {/* Main document area — primary pane */}
         <main
           ref={mainRef}
-          className="flex-1 py-10 px-16 relative overflow-y-auto"
+          className="py-10 px-16 relative overflow-y-auto"
           style={{
+            flex: splitTabIndex !== null ? `0 0 ${splitRatio * 100}%` : '1',
             background: 'var(--color-surface)',
             paddingBottom: '48px',
+            borderTop: splitTabIndex !== null && activePane === 'primary' ? '2px solid var(--color-accent)' : '2px solid transparent',
+            cursor: splitTabIndex !== null ? 'default' : undefined,
           }}
         >
+          {/* Pane header when split — click header to switch panes */}
+          {splitTabIndex !== null && (
+            <div
+              className="flex items-center justify-between mb-4 -mt-4 -mx-4 px-4 py-2"
+              style={{ background: 'var(--color-paper-dark)', borderBottom: '1px solid var(--color-border)', cursor: activePane !== 'primary' ? 'pointer' : 'default' }}
+              onClick={() => { if (activePane !== 'primary') switchActivePane(); }}
+            >
+              <span className="text-xs font-medium" style={{ color: activePane === 'primary' ? 'var(--color-accent)' : 'var(--color-ink-faded)', fontFamily: 'var(--font-sans)' }}>
+                {primaryTitle}
+              </span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: 'var(--color-paper-dark)', color: 'var(--color-ink-faded)', border: '1px solid var(--color-border)' }}>
+                {activePane === 'primary' ? comments.length : splitPaneCommentCount} comments
+              </span>
+            </div>
+          )}
+
           {showSearch && (
             <SearchBar
               onClose={closeSearch}
@@ -958,6 +1158,64 @@ export default function Home() {
           )}
         </main>
 
+        {/* Resize handle — only when split */}
+        {splitTabIndex !== null && (
+          <div
+            className="split-resize-handle"
+            onMouseDown={handleResizeStart}
+          />
+        )}
+
+        {/* Split pane — read-only view of the other document */}
+        {splitTabIndex !== null && (
+          <main
+            ref={splitMainRef}
+            className="py-10 px-16 relative overflow-y-auto"
+            style={{
+              flex: `0 0 ${(1 - splitRatio) * 100}%`,
+              background: 'var(--color-surface)',
+              paddingBottom: '48px',
+              borderTop: activePane === 'split' ? '2px solid var(--color-accent)' : '2px solid transparent',
+              borderLeft: '1px solid var(--color-border)',
+            }}
+          >
+            {/* Pane header — click to switch panes */}
+            <div
+              className="flex items-center justify-between mb-4 -mt-4 -mx-4 px-4 py-2"
+              style={{ background: 'var(--color-paper-dark)', borderBottom: '1px solid var(--color-border)', cursor: activePane !== 'split' ? 'pointer' : 'default' }}
+              onClick={() => { if (activePane !== 'split') switchActivePane(); }}
+            >
+              <span className="text-xs font-medium" style={{ color: activePane === 'split' ? 'var(--color-accent)' : 'var(--color-ink-faded)', fontFamily: 'var(--font-sans)' }}>
+                {splitTitle}
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: 'var(--color-paper-dark)', color: 'var(--color-ink-faded)', border: '1px solid var(--color-border)' }}>
+                  {activePane === 'split' ? comments.length : splitPaneCommentCount} comments
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setSplitTabIndex(null); setActivePane('primary'); }}
+                  className="p-0.5 rounded hover:bg-black/10 transition-colors"
+                  style={{ color: 'var(--color-ink-faded)' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Read-only markdown content */}
+            <article
+              ref={splitArticleRef}
+              className="prose prose-editorial max-w-none"
+            >
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter]} rehypePlugins={[rehypeRaw]}>
+                {processWikiLinks(splitPaneMarkdown)}
+              </ReactMarkdown>
+            </article>
+          </main>
+        )}
+
         {showAgentTab && <Sidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -965,7 +1223,14 @@ export default function Home() {
           isSending={claude.isSending}
           isChatStreaming={chat.isStreaming}
         >
-          {activeTab === 'comments' ? (
+          {activeTab === 'toc' ? (
+            <TableOfContentsTab
+              markdown={doc.markdown}
+              articleRef={articleRef}
+              isEditMode={doc.isEditMode}
+              editorRef={editorRef}
+            />
+          ) : activeTab === 'comments' ? (
             <CommentsTab
               comments={comments}
               isSending={claude.isSending}
@@ -1020,6 +1285,8 @@ export default function Home() {
               onDeleteSession={chat.deleteSession}
               draft={chatDraft}
               onDraftChange={setChatDraft}
+              currentDir={doc.filePath.substring(0, doc.filePath.lastIndexOf('/'))}
+              vaultRoot={vaultRoot}
             />
           )}
         </Sidebar>}
@@ -1039,6 +1306,7 @@ export default function Home() {
         onSubmit={handleAddComment}
         onCancel={cancelComment}
         currentDir={doc.filePath.substring(0, doc.filePath.lastIndexOf('/'))}
+        vaultRoot={vaultRoot}
       />
 
       <NewDocumentModal

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -115,8 +115,10 @@ async function startNextServer(port: number): Promise<void> {
 
 function createWindow(port: number) {
   mainWindow = new BrowserWindow({
+    title: 'Helm',
     width: 1200,
     height: 800,
+    icon: path.join(__dirname, '..', 'build', 'icon.iconset', 'icon_256x256.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -138,10 +140,112 @@ function createWindow(port: number) {
   });
 }
 
+function resolveVaultRoot(fromPath: string): string | null {
+  let dir = fromPath;
+  // If fromPath is a file, start from its directory
+  if (fs.existsSync(dir) && fs.statSync(dir).isFile()) {
+    dir = path.dirname(dir);
+  }
+  while (dir !== path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, '.vault'))) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+function scanVaultFiles(vaultRoot: string): Array<{ relativePath: string; firstLine: string }> {
+  const results: Array<{ relativePath: string; firstLine: string }> = [];
+
+  function walk(dir: string) {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.name.endsWith('.md')) {
+          const relativePath = path.relative(vaultRoot, fullPath);
+          let firstLine = '';
+          try {
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            // Get first heading or first non-empty line
+            const lines = content.split('\n');
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed) {
+                firstLine = trimmed.replace(/^#+\s*/, '');
+                break;
+              }
+            }
+          } catch { /* skip unreadable */ }
+          results.push({ relativePath, firstLine });
+        }
+      }
+    } catch { /* skip unreadable dirs */ }
+  }
+
+  walk(vaultRoot);
+  return results;
+}
+
+function resolveRefsToContext(
+  refs: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean },
+  filePath: string,
+  vaultRoot: string | null,
+): string {
+  let context = '';
+  const dir = path.dirname(filePath);
+
+  // @vault — generate vault index
+  if (refs.vault && vaultRoot) {
+    const files = scanVaultFiles(vaultRoot);
+    const index = files.map(f => `- ${f.relativePath}${f.firstLine ? ': ' + f.firstLine : ''}`).join('\n');
+    context += `\n\nVault index (${vaultRoot}):\n${index}`;
+  }
+
+  // @architecture — read known architecture files
+  if (refs.architecture && vaultRoot) {
+    const archFiles = ['ARCHITECTURE.md', 'PRODUCT_FEATURES.md', 'README.md'];
+    for (const name of archFiles) {
+      const archPath = path.join(vaultRoot, name);
+      try {
+        const content = fs.readFileSync(archPath, 'utf-8');
+        context += `\n\nArchitecture document (${name}):\n\`\`\`\n${content}\n\`\`\``;
+      } catch { /* skip missing */ }
+    }
+  }
+
+  // @doc references — resolve relative to dir first, then vault root
+  for (const docRef of refs.docs) {
+    let resolved = false;
+    // Try relative to current file's directory
+    const localPath = path.join(dir, docRef);
+    try {
+      const content = fs.readFileSync(localPath, 'utf-8');
+      context += `\n\nReference document (${docRef}):\n\`\`\`\n${content}\n\`\`\``;
+      resolved = true;
+    } catch { /* not found locally */ }
+
+    // Try relative to vault root
+    if (!resolved && vaultRoot) {
+      const vaultPath = path.join(vaultRoot, docRef);
+      try {
+        const content = fs.readFileSync(vaultPath, 'utf-8');
+        context += `\n\nReference document (${docRef}):\n\`\`\`\n${content}\n\`\`\``;
+      } catch { /* not found in vault either */ }
+    }
+  }
+
+  return context;
+}
+
 function registerIpcHandlers() {
   ipcMain.handle(
     'claude:send-edit',
-    async (_event, prompt: string, filePath: string, model?: string) => {
+    async (_event, prompt: string, filePath: string, model?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }) => {
       if (currentClaude) {
         currentClaude.kill();
         currentClaude = null;
@@ -149,9 +253,16 @@ function registerIpcHandlers() {
 
       const useModel = model || 'sonnet';
       const isFast = useModel !== 'opus';
+
+      const vaultRoot = resolveVaultRoot(filePath);
+      let refContext = '';
+      if (refs) {
+        refContext = resolveRefsToContext(refs, filePath, vaultRoot);
+      }
+
       const fullPrompt = isFast
-        ? `Edit the file at ${filePath}. Read it, apply the changes, and stop. Do not explain.\n\n${prompt}`
-        : `Edit the file at ${filePath}:\n\n${prompt}`;
+        ? `Edit the file at ${filePath}. Read it, apply the changes, and stop. Do not explain.\n\n${prompt}${refContext}`
+        : `Edit the file at ${filePath}:\n\n${prompt}${refContext}`;
       accumulatedStreamText = '';
       currentClaude = spawnClaude(fullPrompt, {
         allowedTools: isFast ? ['Read', 'Edit', 'Write'] : undefined,
@@ -197,6 +308,7 @@ function registerIpcHandlers() {
       contextSelection: string | null,
       history: Array<{ role: string; content: string }>,
       model?: string,
+      refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean },
     ) => {
       if (currentClaude) {
         currentClaude.kill();
@@ -229,6 +341,15 @@ function registerIpcHandlers() {
       }
 
       promptParts.push(`User message: ${message}`);
+
+      // Resolve vault refs
+      const vaultRoot = resolveVaultRoot(docPath);
+      if (refs) {
+        const refContext = resolveRefsToContext(refs, docPath, vaultRoot);
+        if (refContext) {
+          promptParts.push(`Additional context from referenced documents:${refContext}`);
+        }
+      }
 
       const useModel = model || 'sonnet';
       const fullPrompt = promptParts.join('\n\n---\n\n');
@@ -281,6 +402,22 @@ function registerIpcHandlers() {
       currentClaude.kill();
       currentClaude = null;
     }
+  });
+
+  ipcMain.handle('vault:resolve-root', async (_event, fromPath: string) => {
+    return resolveVaultRoot(fromPath);
+  });
+
+  ipcMain.handle('vault:get-index', async (_event, fromPath: string) => {
+    const vaultRoot = resolveVaultRoot(fromPath);
+    if (!vaultRoot) return null;
+    return { vaultRoot, files: scanVaultFiles(vaultRoot) };
+  });
+
+  ipcMain.handle('vault:list-files', async (_event, fromPath: string) => {
+    const vaultRoot = resolveVaultRoot(fromPath);
+    if (!vaultRoot) return [];
+    return scanVaultFiles(vaultRoot).map(f => f.relativePath);
   });
 }
 
@@ -436,6 +573,16 @@ function buildAppMenu() {
 app.name = 'Helm';
 
 app.whenReady().then(async () => {
+  // Set dock icon in dev mode (production uses the bundled icon)
+  if (!app.isPackaged && process.platform === 'darwin') {
+    const iconPath = path.join(__dirname, '..', 'build', 'icon.iconset', 'icon_256x256.png');
+    if (fs.existsSync(iconPath)) {
+      const icon = nativeImage.createFromPath(iconPath);
+      if (!icon.isEmpty()) {
+        app.dock.setIcon(icon);
+      }
+    }
+  }
   try {
     serverPort = await findFreePort();
     console.log(`Starting Next.js on port ${serverPort}...`);
