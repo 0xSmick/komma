@@ -414,7 +414,7 @@ function registerIpcHandlers() {
       const fullPrompt = promptParts.join('\n\n---\n\n');
       accumulatedChatText = '';
       currentChat = spawnClaude(fullPrompt, {
-        maxTurns: useModel === 'opus' ? undefined : 3,
+        maxTurns: useModel === 'opus' ? undefined : 10,
         model: useModel,
       });
 
