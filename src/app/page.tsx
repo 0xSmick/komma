@@ -1252,18 +1252,19 @@ export default function Home() {
         cleanupComplete();
         setIsCreatingDoc(false);
         if (data.success) {
-          // Verify the file actually got created before opening
-          try {
-            const check = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
-            const checkData = await check.json();
-            if (checkData.content) {
-              handleSelectFile(filePath);
-            } else {
-              console.error('New document file was empty after generation');
-            }
-          } catch {
-            console.error('New document file was not created');
+          // Verify the file actually got created before opening (retry to handle write flush delay)
+          for (let attempt = 0; attempt < 5; attempt++) {
+            try {
+              const check = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
+              const checkData = await check.json();
+              if (checkData.content) {
+                handleSelectFile(filePath);
+                return;
+              }
+            } catch { /* file not ready yet */ }
+            await new Promise(r => setTimeout(r, 500));
           }
+          console.error('New document file was empty after generation');
         }
       });
       await api.claude.sendEdit(
