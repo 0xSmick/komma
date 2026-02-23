@@ -21,7 +21,7 @@ interface ChatMessage {
 
 export type { ChatSession, ChatMessage };
 
-export function useChat(documentPath: string, model?: string) {
+export function useChat(documentPath: string, model?: string, onProposal?: (original: string, proposed: string) => void) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);

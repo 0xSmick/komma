@@ -14,7 +14,7 @@ interface UseClaudeOptions {
   createChangelog: (documentPath: string, requestId: string, commentsSnapshot: string) => Promise<number | null>;
   updateChangelog: (changelogId: number, status: string, streamLog?: string, summary?: string) => Promise<void>;
   loadDocument: () => Promise<unknown>;
-  setActiveTab: (tab: 'toc' | 'edits' | 'chat') => void;
+  setActiveTab: (tab: 'toc' | 'edits' | 'chat' | 'history') => void;
 }
 
 export function useClaude({
@@ -138,11 +138,13 @@ export function useClaude({
     setClaudeOutput('Edit cancelled');
   }, []);
 
-  const restoreState = useCallback((before: string | null, after: string | null, output: string, stream: string, showLast: boolean) => {
+  const restoreState = useCallback((before: string | null, after: string | null, output: string, stream: string, showLast: boolean, chunks?: DiffChunk[]) => {
     setBeforeMarkdown(before);
     setAfterMarkdown(after);
     beforeMarkdownRef.current = before;
-    if (before && after) {
+    if (chunks && chunks.length > 0) {
+      setDiffChunks(chunks);
+    } else if (before && after) {
       setDiffChunks(computeChunkedDiff(before, after));
     } else {
       setDiffChunks([]);
@@ -155,8 +157,69 @@ export function useClaude({
   }, []);
 
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
-
   const [model, setModel] = useState<string>('sonnet');
+
+  const clearProposals = useCallback(() => {
+    setBeforeMarkdown(null);
+    setAfterMarkdown(null);
+    setDiffChunks([]);
+  }, []);
+
+  const setProposalFromChat = useCallback((original: string, proposed: string) => {
+    setBeforeMarkdown(original);
+    beforeMarkdownRef.current = original;
+    setAfterMarkdown(proposed);
+    setDiffChunks(computeChunkedDiff(original, proposed));
+  }, []);
+
+  const reviseChunk = useCallback(async (chunkId: string, instruction: string) => {
+    // Find the chunk and revise it using Claude
+    const chunk = diffChunks.find(c => c.id === chunkId);
+    if (!chunk || chunk.type !== 'modification') return;
+
+    const beforeText = chunk.beforeLines.join('\n');
+    const afterText = chunk.afterLines.join('\n');
+    const isElectronEnv = typeof window !== 'undefined' && !!window.electronAPI;
+
+    if (!isElectronEnv) return;
+
+    // Mark chunk as revising
+    setDiffChunks(prev => prev.map(c =>
+      c.id === chunkId ? { ...c, isRevising: true } : c
+    ));
+
+    try {
+      const api = window.electronAPI!;
+      const revisePrompt = `I have a proposed text change. Revise the proposed version based on this feedback.\n\nOriginal text:\n"""\n${beforeText}\n"""\n\nCurrent proposed text:\n"""\n${afterText}\n"""\n\nRevision instruction: ${instruction}\n\nRespond with ONLY the revised text, no explanation.`;
+
+      let revisedText = '';
+      const cleanupStream = api.claude.onStream((data) => {
+        if (data.type === 'edit') revisedText = data.content;
+      });
+      const cleanupComplete = api.claude.onComplete((data) => {
+        if (data.type !== 'edit') return;
+        cleanupStream();
+        cleanupComplete();
+        if (data.success && data.content) {
+          const newAfterLines = data.content.trim().split('\n');
+          setDiffChunks(prev => prev.map(c =>
+            c.id === chunkId ? { ...c, afterLines: newAfterLines, isRevising: false, status: 'pending' as const } : c
+          ));
+        } else {
+          setDiffChunks(prev => prev.map(c =>
+            c.id === chunkId ? { ...c, isRevising: false } : c
+          ));
+        }
+      });
+
+      await api.claude.sendEdit(revisePrompt, filePath, model);
+    } catch {
+      setDiffChunks(prev => prev.map(c =>
+        c.id === chunkId ? { ...c, isRevising: false } : c
+      ));
+    }
+  }, [diffChunks, filePath, model]);
+
   const editActiveRef = useRef(false);
 
   const sendToClaude = async () => {
@@ -398,5 +461,8 @@ export function useClaude({
     approveAllChunks,
     rejectAllChunks,
     finalizeChunks,
+    clearProposals,
+    setProposalFromChat,
+    reviseChunk,
   };
 }

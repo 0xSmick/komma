@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BrowserFile } from '../types';
 
+const isOpenable = (name: string) => name.endsWith('.md') || name.endsWith('.html') || name.endsWith('.htm');
+
 interface FileExplorerProps {
   show: boolean;
   currentDir: string;
@@ -150,7 +152,7 @@ function FileTreeItem({
   onSelectFile: (path: string) => void;
 }) {
   const isExpanded = expanded[file.path] || false;
-  const isMarkdown = file.name.endsWith('.md');
+  const isMarkdown = isOpenable(file.name);
   const isActive = file.path === currentFile;
   const indent = 12 + depth * 16;
 

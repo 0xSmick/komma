@@ -32,6 +32,7 @@ import InlineDiffView from './components/InlineDiffView';
 import { computeChunkedDiff } from '../lib/diff';
 import type { DiffChunk } from '../lib/diff';
 import FileExplorer from './components/FileExplorer';
+import HtmlViewer from './components/HtmlViewer';
 import MultiAgentProgress from './components/MultiAgentProgress';
 
 const RichEditor = dynamic(() => import('./components/RichEditor'), { ssr: false });
@@ -130,6 +131,7 @@ export default function Home() {
   const [newComment, setNewComment] = useState('');
 
   const mainRef = useRef<HTMLElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const scrollPositionMap = useRef<Map<string, number>>(new Map());
   const perDocCacheRef = useRef<Map<string, {
     chatActiveSessionId: number | null;
@@ -721,6 +723,15 @@ export default function Home() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey && e.key === 'k') {
         e.preventDefault();
+        // For HTML files, use selectedText state (set by iframe bridge) instead of window.getSelection()
+        if (doc.isHtml) {
+          if (selectedText && selectedText.length >= 1) {
+            savedSelectionRef.current = { text: selectedText, range: null };
+            setShowCommentInput(true);
+            setShowMiniTooltip(false);
+          }
+          return;
+        }
         const selection = window.getSelection();
         const text = selection?.toString().trim();
         if (text && text.length >= 1) {
@@ -774,10 +785,10 @@ export default function Home() {
         setShowNewDocModal(true);
       }
 
-      // Cmd+F: search / find and replace
+      // Cmd+F: search / find and replace (not for HTML files)
       if (e.metaKey && e.key === 'f') {
         e.preventDefault();
-        setShowSearch(true);
+        if (!doc.isHtml) setShowSearch(true);
       }
 
       // Cmd+B: toggle file explorer (left panel) — skip in edit mode so TipTap can handle Bold
@@ -792,10 +803,10 @@ export default function Home() {
         setShowAgentTab(prev => !prev);
       }
 
-      // Cmd+E: toggle edit mode
+      // Cmd+E: toggle edit mode (not for HTML files)
       if (e.metaKey && e.key === 'e') {
         e.preventDefault();
-        toggleEditMode();
+        if (!doc.isHtml) toggleEditMode();
       }
 
       // Cmd+Enter: send comments to Claude (when on comments tab with pending comments, not in comment drawer)
@@ -873,20 +884,20 @@ export default function Home() {
           cancelComment();
         } else if (doc.isEditMode) {
           saveDocument();
-        } else {
+        } else if (!doc.isHtml) {
           // Delegate to vim (clears selection/operator-pending)
           vim.handleKeyDown(e);
         }
         return;
       }
 
-      // Delegate all non-meta vim keys to useVim
-      vim.handleKeyDown(e);
+      // Delegate all non-meta vim keys to useVim (skip for HTML files)
+      if (!doc.isHtml) vim.handleKeyDown(e);
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [doc.isEditMode, toggleEditMode, saveDocument, activeTabIndex, tabs.length, tabs, handleCloseTab, handleSelectTab, activeTab, comments, claude.isSending, claude.sendToClaude, showFileBrowser, showNewDocModal, showCommentInput, showSearch, cancelComment, closeSearch, vim.handleKeyDown, vim.selectionAnchor, vim.blockIndex, getBlocks, splitTabIndex, fetchSplitPaneContent, switchActivePane]);
+  }, [doc.isEditMode, doc.isHtml, toggleEditMode, saveDocument, activeTabIndex, tabs.length, tabs, handleCloseTab, handleSelectTab, activeTab, comments, claude.isSending, claude.sendToClaude, showFileBrowser, showNewDocModal, showCommentInput, showSearch, cancelComment, closeSearch, vim.handleKeyDown, vim.selectionAnchor, vim.blockIndex, getBlocks, splitTabIndex, fetchSplitPaneContent, switchActivePane, selectedText]);
 
   // Electron menu bar actions
   useEffect(() => {
@@ -908,10 +919,10 @@ export default function Home() {
             handleSelectFile(args[0] as string);
           }
           break;
-        case 'save': if (doc.isEditMode) saveDocument(); break;
+        case 'save': if (doc.isEditMode && !doc.isHtml) saveDocument(); break;
         case 'close-tab': handleCloseTab(activeTabIndex); break;
-        case 'find': setShowSearch(true); break;
-        case 'toggle-edit': toggleEditMode(); break;
+        case 'find': if (!doc.isHtml) setShowSearch(true); break;
+        case 'toggle-edit': if (!doc.isHtml) toggleEditMode(); break;
         case 'toggle-sidebar': setShowAgentTab(prev => !prev); break;
         case 'toggle-theme': toggleTheme(); break;
         case 'add-comment': setShowCommentInput(true); break;
@@ -1032,6 +1043,11 @@ export default function Home() {
   };
 
   const handleNavigateToComment = useCallback((comment: Comment) => {
+    // For HTML files, navigate via iframe postMessage
+    if (doc.isHtml && iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'helm-navigate', text: comment.selectedText }, '*');
+      return;
+    }
     const article = articleRef.current;
     if (!article) return;
 
@@ -1131,7 +1147,7 @@ export default function Home() {
         }
       }
     }
-  }, []);
+  }, [doc.isHtml]);
 
   const openFileBrowser = useCallback(() => {
     setShowFileBrowser(true);
@@ -1316,6 +1332,7 @@ export default function Home() {
   // 1. Saved comments (while they exist)
   // 2. Active selection (while comment drawer is open)
   useEffect(() => {
+    if (doc.isHtml) return; // Highlights managed by iframe bridge for HTML files
     const article = articleRef.current;
     if (!article || doc.isEditMode) return;
 
@@ -1398,7 +1415,7 @@ export default function Home() {
         }
       }
     }
-  }, [comments, doc.markdown, doc.isEditMode, showCommentInput, selectedText]);
+  }, [comments, doc.markdown, doc.isEditMode, doc.isHtml, showCommentInput, selectedText]);
 
   return (
     <div
@@ -1422,8 +1439,8 @@ export default function Home() {
         setIsDragOver(false);
         const file = e.dataTransfer.files[0];
         if (!file) return;
-        // Only accept markdown files
-        if (!file.name.endsWith('.md') && !file.name.endsWith('.markdown')) return;
+        // Only accept markdown and HTML files
+        if (!file.name.endsWith('.md') && !file.name.endsWith('.markdown') && !file.name.endsWith('.html') && !file.name.endsWith('.htm')) return;
         // Use Electron's webUtils.getPathForFile (works with sandbox)
         const api = (window as any).electronAPI;
         const filePath = api?.getPathForFile?.(file) || (file as any).path;
@@ -1677,6 +1694,24 @@ export default function Home() {
               </svg>
               Loading document...
             </div>
+          ) : doc.isHtml ? (
+            <div style={{ height: 'calc(100vh - 160px)', width: '100%' }}>
+              <HtmlViewer
+                htmlContent={doc.markdown}
+                filePath={doc.filePath}
+                comments={comments}
+                iframeRef={iframeRef}
+                onSelectionChange={(sel) => {
+                  if (sel && sel.text) {
+                    setSelectedText(sel.text);
+                    setTooltipPosition(sel.position);
+                    setShowMiniTooltip(true);
+                  } else {
+                    setShowMiniTooltip(false);
+                  }
+                }}
+              />
+            </div>
           ) : (
             <>
               <DocumentInfo
@@ -1847,12 +1882,18 @@ export default function Home() {
           isChatStreaming={chat.isStreaming}
         >
           {activeTab === 'toc' ? (
-            <TableOfContentsTab
-              markdown={doc.markdown}
-              articleRef={articleRef}
-              isEditMode={doc.isEditMode}
-              editorRef={editorRef}
-            />
+            doc.isHtml ? (
+              <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--color-ink-faded)', fontSize: '13px', fontFamily: 'var(--font-sans)' }}>
+                Table of contents is not available for HTML files.
+              </div>
+            ) : (
+              <TableOfContentsTab
+                markdown={doc.markdown}
+                articleRef={articleRef}
+                isEditMode={doc.isEditMode}
+                editorRef={editorRef}
+              />
+            )
           ) : activeTab === 'edits' ? (
             <EditsTab
               comments={comments}
@@ -1945,7 +1986,7 @@ export default function Home() {
 
       <NewDocumentModal
         show={showNewDocModal}
-        currentDir={doc.filePath.substring(0, doc.filePath.lastIndexOf('/'))}
+        currentDir={vaultRoot || (doc.filePath ? doc.filePath.substring(0, doc.filePath.lastIndexOf('/')) : '')}
         onSubmit={handleNewDocument}
         onCancel={() => setShowNewDocModal(false)}
       />

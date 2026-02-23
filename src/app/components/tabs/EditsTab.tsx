@@ -34,6 +34,7 @@ interface EditsTabProps {
   expandedEntryId: number | null;
   setExpandedEntryId: (id: number | null) => void;
   onClearChangelogs: () => void;
+  onNavigateToComment?: (comment: Comment) => void;
 }
 
 export default function EditsTab({

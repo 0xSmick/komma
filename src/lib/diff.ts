@@ -43,6 +43,8 @@ export interface DiffChunk {
   beforeLines: string[];
   afterLines: string[];
   status: 'pending' | 'approved' | 'rejected';
+  isRevising?: boolean;
+  thread?: Array<{ role: string; content: string }>;
 }
 
 /**

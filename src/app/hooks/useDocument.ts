@@ -100,6 +100,8 @@ export function useDocument() {
     return service;
   });
 
+  const isHtml = filePath.endsWith('.html') || filePath.endsWith('.htm');
+
   // Load the markdown file (returns loaded comments and changelogs for sibling hooks)
   const loadDocument = useCallback(async (): Promise<{
     comments: Comment[];
@@ -126,17 +128,25 @@ export function useDocument() {
       throw new Error(`Failed to fetch after ${retries} retries`);
     };
     try {
-      const [fileRes, commentsRes, changelogsRes, frontmatterRes] = await Promise.all([
+      const fetches: Promise<Response>[] = [
         fetchWithRetry(`/api/file?path=${encodeURIComponent(filePath)}`),
         fetchWithRetry(`/api/comments?document_path=${encodeURIComponent(filePath)}`),
         fetchWithRetry(`/api/changelogs?document_path=${encodeURIComponent(filePath)}`),
-        fetchWithRetry(`/api/frontmatter?path=${encodeURIComponent(filePath)}`)
-      ]);
+      ];
+      if (!isHtml) {
+        fetches.push(fetchWithRetry(`/api/frontmatter?path=${encodeURIComponent(filePath)}`));
+      }
+      const [fileRes, commentsRes, changelogsRes, frontmatterRes] = await Promise.all(fetches);
       const data = await fileRes.json();
       setMarkdown(data.content || '');
-      const fmData = await frontmatterRes.json();
-      setFrontmatter(fmData.frontmatter || null);
-      rawFrontmatterRef.current = fmData.rawFrontmatter || null;
+      if (frontmatterRes) {
+        const fmData = await frontmatterRes.json();
+        setFrontmatter(fmData.frontmatter || null);
+        rawFrontmatterRef.current = fmData.rawFrontmatter || null;
+      } else {
+        setFrontmatter(null);
+        rawFrontmatterRef.current = null;
+      }
       const commentsData = await commentsRes.json();
       if (commentsData.comments) {
         loadedComments = commentsData.comments.map((c: { id: number; selected_text: string; instruction: string; line_hint: string | null; created_at: string; status: string }) => ({
@@ -157,7 +167,7 @@ export function useDocument() {
     }
     setIsLoading(false);
     return { comments: loadedComments, changelogs: loadedChangelogs };
-  }, [filePath]);
+  }, [filePath, isHtml]);
 
   // Initialize edit mode with current markdown (strip frontmatter)
   useEffect(() => {
@@ -260,6 +270,7 @@ export function useDocument() {
     setEditedHtml,
     isEditMode,
     setIsEditMode,
+    isHtml,
     isLoading,
     isRestoringPath,
     isSaving,

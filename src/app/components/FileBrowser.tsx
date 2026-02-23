@@ -3,10 +3,13 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { BrowserFile } from '../types';
 
+const isOpenable = (name: string) => name.endsWith('.md') || name.endsWith('.html') || name.endsWith('.htm');
+
 interface FileBrowserProps {
   show: boolean;
   filePath: string;
   recentFiles: string[];
+  vaultRoot?: string | null;
   onSelectFile: (path: string) => void;
   onClose: () => void;
 }
@@ -15,6 +18,7 @@ export default function FileBrowser({
   show,
   filePath,
   recentFiles,
+  vaultRoot,
   onSelectFile,
   onClose,
 }: FileBrowserProps) {
@@ -24,6 +28,11 @@ export default function FileBrowser({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  const [searchResults, setSearchResults] = useState<BrowserFile[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRoot = vaultRoot || '';
 
   const loadBrowserDirectory = useCallback(async (path: string) => {
     try {
@@ -39,24 +48,48 @@ export default function FileBrowser({
     }
   }, []);
 
-  // Filter files based on search input
+  // Debounced recursive search
+  useEffect(() => {
+    if (!filter || !searchRoot) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/files?path=${encodeURIComponent(searchRoot)}&search=${encodeURIComponent(filter)}`);
+        const data = await res.json();
+        setSearchResults(data.files || []);
+      } catch {
+        setSearchResults([]);
+      }
+      setIsSearching(false);
+    }, 200);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [filter, searchRoot]);
+
+  // When searching, show recursive results; otherwise filter current directory
   const filteredFiles = useMemo(() => {
+    if (filter && searchRoot) return searchResults;
     if (!filter) return browserFiles;
     const lower = filter.toLowerCase();
     return browserFiles.filter(f => f.name.toLowerCase().includes(lower));
-  }, [browserFiles, filter]);
+  }, [browserFiles, filter, searchResults, searchRoot]);
 
   // Load the directory when the modal opens
   useEffect(() => {
     if (show) {
-      const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+      const fileDir = filePath ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
+      const dir = vaultRoot || fileDir || '';
       loadBrowserDirectory(dir);
       setFilter('');
       setSelectedIndex(0);
       // Auto-focus search input
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
-  }, [show, filePath, loadBrowserDirectory]);
+  }, [show, filePath, vaultRoot, loadBrowserDirectory]);
 
   // Reset selected index when filter changes
   useEffect(() => {
@@ -88,7 +121,7 @@ export default function FileBrowser({
           if (file.isDirectory) {
             loadBrowserDirectory(file.path);
             setFilter('');
-          } else if (file.name.endsWith('.md')) {
+          } else if (isOpenable(file.name)) {
             onSelectFile(file.path);
           }
         }
@@ -112,7 +145,7 @@ export default function FileBrowser({
   const selectFile = (path: string, isDirectory: boolean) => {
     if (isDirectory) {
       loadBrowserDirectory(path);
-    } else if (path.endsWith('.md')) {
+    } else if (isOpenable(path)) {
       onSelectFile(path);
     }
   };
@@ -224,13 +257,13 @@ export default function FileBrowser({
         <div ref={listRef} className="flex-1 overflow-y-auto" onKeyDown={handleKeyDown}>
           {filteredFiles.length === 0 ? (
             <div className="p-5 text-center text-sm" style={{ color: 'var(--color-ink-muted)' }}>
-              {filter ? 'No matching files' : 'No files found'}
+              {isSearching ? 'Searching...' : filter ? 'No matching files' : 'No files found'}
             </div>
           ) : (
             <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
               {filteredFiles.map((file, index) => {
-                const isMarkdown = file.name.endsWith('.md');
-                const canSelect = file.isDirectory || isMarkdown;
+                const isOpenableFile = isOpenable(file.name);
+                const canSelect = file.isDirectory || isOpenableFile;
                 const isSelected = index === selectedIndex;
 
                 return (
@@ -253,7 +286,7 @@ export default function FileBrowser({
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-amber)" strokeWidth="2">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                       </svg>
-                    ) : isMarkdown ? (
+                    ) : isOpenableFile ? (
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                         <polyline points="14 2 14 8 20 8" />
