@@ -91,7 +91,7 @@ export function useChat(documentPath: string, model?: string, onProposal?: (orig
 
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
-  const sendMessage = useCallback(async (message: string, contextSelection?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }, images?: Array<{ data: string; mimeType: string; name: string }>) => {
+  const sendMessage = useCallback(async (message: string, contextSelection?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean; skills?: string[] }, images?: Array<{ data: string; mimeType: string; name: string }>) => {
     setIsStreaming(true);
     setStreamOutput('');
 

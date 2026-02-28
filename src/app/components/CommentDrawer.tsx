@@ -9,7 +9,7 @@ interface CommentDrawerProps {
   selectedText: string;
   newComment: string;
   setNewComment: (value: string) => void;
-  onSubmit: (commentText: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }) => void;
+  onSubmit: (commentText: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean; skills?: string[] }) => void;
   onCancel: () => void;
   currentDir?: string;
   vaultRoot?: string | null;

@@ -287,14 +287,16 @@ export function useClaude({
     const changelogId = await createChangelog(filePath, requestId, JSON.stringify(pendingComments));
 
     // Parse refs from all pending comments
-    const refs: { docs: string[]; mcps: string[]; vault: boolean; architecture: boolean } = {
-      docs: [], mcps: [], vault: false, architecture: false,
+    const refs: { docs: string[]; mcps: string[]; skills: string[]; vault: boolean; architecture: boolean } = {
+      docs: [], mcps: [], skills: [], vault: false, architecture: false,
     };
     for (const c of pendingComments) {
       if (/@vault(?:\s|$)/.test(c.comment)) refs.vault = true;
       if (/@architecture(?:\s|$)/.test(c.comment)) refs.architecture = true;
       const mcpMatches = c.comment.matchAll(/@mcp:([\w-]+)/g);
       for (const m of mcpMatches) { if (!refs.mcps.includes(m[1])) refs.mcps.push(m[1]); }
+      const skillMatches = c.comment.matchAll(/@skill:([\w-]+(?::[\w-]+)?)/g);
+      for (const m of skillMatches) { if (!refs.skills.includes(m[1])) refs.skills.push(m[1]); }
       const docMatches = c.comment.matchAll(/@((?:[\w.-]+\/)*[\w.-]+\.md)/g);
       for (const m of docMatches) { if (!refs.docs.includes(m[1])) refs.docs.push(m[1]); }
     }

@@ -89,8 +89,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke('git:remote-info', filePath);
     },
   },
+  quickCapture: {
+    inferTemplate(description: string): Promise<{ templateId: string; folder: string }> {
+      return ipcRenderer.invoke('quick-capture:infer-template', description);
+    },
+    getShortcut(): Promise<string> {
+      return ipcRenderer.invoke('quick-capture:get-shortcut');
+    },
+    setShortcut(shortcut: string): Promise<{ success: boolean }> {
+      return ipcRenderer.invoke('quick-capture:set-shortcut', shortcut);
+    },
+  },
   claude: {
-    sendEdit(prompt: string, filePath: string, model?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }): Promise<void> {
+    sendEdit(prompt: string, filePath: string, model?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean; skills?: string[] }): Promise<void> {
       return ipcRenderer.invoke('claude:send-edit', prompt, filePath, model, refs);
     },
     sendChat(
@@ -100,7 +111,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       contextSelection: string | null,
       history: Array<{ role: string; content: string }>,
       model?: string,
-      refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean },
+      refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean; skills?: string[] },
       images?: Array<{ data: string; mimeType: string; name: string }>,
     ): Promise<void> {
       return ipcRenderer.invoke(
@@ -124,6 +135,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     listMcps(): Promise<{ name: string; source?: string }[]> {
       return ipcRenderer.invoke('claude:list-mcps');
+    },
+    listSkills(): Promise<{ name: string; description?: string; source?: string }[]> {
+      return ipcRenderer.invoke('claude:list-skills');
+    },
+    readSkill(name: string): Promise<string | null> {
+      return ipcRenderer.invoke('claude:read-skill', name);
     },
     onStream(
       callback: (data: { type: 'edit' | 'chat'; content: string }) => void,

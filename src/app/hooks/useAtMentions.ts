@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 export interface MentionItem {
-  type: 'doc' | 'mcp' | 'special';
+  type: 'doc' | 'mcp' | 'skill' | 'special';
   name: string;
   display: string;
   description?: string;
@@ -12,6 +12,7 @@ export interface MentionItem {
 export interface ParsedRefs {
   docs: string[];
   mcps: string[];
+  skills: string[];
   vault: boolean;
   architecture: boolean;
 }
@@ -77,6 +78,21 @@ export function useAtMentions({ currentDir, vaultRoot }: UseAtMentionsOptions) {
       }
     } catch { /* ignore */ }
 
+    // Skills (from plugins + user commands)
+    try {
+      const skills = await window.electronAPI?.claude.listSkills();
+      if (skills) {
+        for (const s of skills) {
+          items.push({
+            type: 'skill',
+            name: s.name,
+            display: s.name,
+            description: s.description || (s.source === 'user' ? 'User command' : `Skill · ${s.source}`),
+          });
+        }
+      }
+    } catch { /* ignore */ }
+
     setAllItems(items);
   }, [currentDir, vaultRoot]);
 
@@ -124,6 +140,7 @@ export function useAtMentions({ currentDir, vaultRoot }: UseAtMentionsOptions) {
   const getMentionInsertText = useCallback((item: MentionItem): string => {
     if (item.type === 'special') return `@${item.name}`;
     if (item.type === 'mcp') return `@mcp:${item.name}`;
+    if (item.type === 'skill') return `@skill:${item.name}`;
     return `@${item.name}`;
   }, []);
 
@@ -151,6 +168,7 @@ export function useAtMentions({ currentDir, vaultRoot }: UseAtMentionsOptions) {
   const parseRefs = useCallback((text: string): ParsedRefs => {
     const docs: string[] = [];
     const mcps: string[] = [];
+    const skills: string[] = [];
     let vault = false;
     let architecture = false;
 
@@ -164,13 +182,18 @@ export function useAtMentions({ currentDir, vaultRoot }: UseAtMentionsOptions) {
     while ((m = mcpRegex.exec(text)) !== null) {
       if (!mcps.includes(m[1])) mcps.push(m[1]);
     }
-    // Match @path/to/file.md or @file.md (but not @vault or @architecture or @mcp:)
+    // Match @skill:name (supports plugin:skill format like "superpowers:brainstorming")
+    const skillRegex = /@skill:([\w-]+(?::[\w-]+)?)/g;
+    while ((m = skillRegex.exec(text)) !== null) {
+      if (!skills.includes(m[1])) skills.push(m[1]);
+    }
+    // Match @path/to/file.md or @file.md (but not @vault or @architecture or @mcp: or @skill:)
     const docRegex = /@((?:[\w.-]+\/)*[\w.-]+\.md)/g;
     while ((m = docRegex.exec(text)) !== null) {
       if (!docs.includes(m[1])) docs.push(m[1]);
     }
 
-    return { docs, mcps, vault, architecture };
+    return { docs, mcps, skills, vault, architecture };
   }, []);
 
   // Handle keyboard events in the dropdown
