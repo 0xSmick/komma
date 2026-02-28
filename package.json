@@ -10,7 +10,7 @@
     "lint": "eslint",
     "build:electron": "tsc -p tsconfig.electron.json",
     "electron:dev": "npm run build:electron && electron .",
-    "electron:build": "next build && node -e \"const fs=require('fs'),p=require('path'),src=p.join('node_modules/next/dist/compiled/next-server'),dst=p.join('.next/standalone/node_modules/next/dist/compiled/next-server');fs.readdirSync(src).filter(f=>f.includes('app-route')).forEach(f=>{try{fs.copyFileSync(p.join(src,f),p.join(dst,f))}catch{}})\" && npm run build:electron && electron-builder",
+    "electron:build": "next build && node scripts/fix-standalone.js && npm run build:electron && electron-builder",
     "dist": "npm run electron:build",
     "postinstall": "node scripts/patch-electron.js || true"
   },
@@ -29,9 +29,7 @@
     "@tiptap/pm": "^3.17.0",
     "@tiptap/react": "^3.17.0",
     "@tiptap/starter-kit": "^3.17.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/turndown": "^5.0.6",
-    "better-sqlite3": "^12.6.2",
     "marked": "^17.0.1",
     "next": "16.1.4",
     "react": "19.2.3",
@@ -40,6 +38,7 @@
     "rehype-raw": "^7.0.0",
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
+    "sql.js": "^1.14.0",
     "turndown": "^7.2.2"
   },
   "build": {
@@ -67,16 +66,14 @@
         "to": "app/.next/standalone/.next/static"
       }
     ],
-    "asar": true,
-    "asarUnpack": [
-      "**/*.node"
-    ]
+    "asar": true
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sql.js": "^1.4.9",
     "electron": "^34.2.0",
     "electron-builder": "^25.1.8",
     "eslint": "^9",
