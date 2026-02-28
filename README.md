@@ -6,7 +6,7 @@ Komma is a native macOS markdown editor built for product managers, founders, an
 
 ## What People Use It For
 
-- **Meeting notes → action items.** Drop a transcript from Otter or Fireflies via MCP, ask Claude to pull out decisions and next steps
+- **Meeting notes → action items.** Drop a transcript from Granola via MCP, ask Claude to pull out decisions and next steps
 - **Analytics → reports.** Pull data from Amplitude, Mixpanel, or your database via MCP, turn it into a weekly update or board memo
 - **Writing context files for agents.** Draft ARCHITECTURE.md, PRDs, or system prompts with Claude helping you think through the details
 - **Product specs.** Write the rough draft, leave comments like "flesh this out" or "add edge cases", review Claude's suggestions line-by-line
