@@ -1,6 +1,18 @@
-# komma
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./public/logo-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="./public/logo-light.svg" />
+    <img alt="komma" src="./public/logo-dark.svg" width="128" height="128" />
+  </picture>
+</p>
 
-**A markdown editor where Claude edits with you, not for you.**
+<h1 align="center">komma</h1>
+
+<p align="center">
+  <strong>A rich, open source markdown editor where Claude edits with you, not for you.</strong>
+  <br />
+  macOS &nbsp;·&nbsp; Electron &nbsp;·&nbsp; AGPL-3.0
+</p>
 
 https://github.com/user-attachments/assets/9f2f04ce-8e4f-4708-b161-6248d3e36ea4
 
@@ -8,16 +20,14 @@ https://github.com/user-attachments/assets/9f2f04ce-8e4f-4708-b161-6248d3e36ea4
 
 ## Why
 
-AI made me a faster writer but a worse editor. Every tool I tried would rewrite entire documents when I just wanted one paragraph tightened. None of them tracked changes or remembered anything between sessions.
-
-Markdown is the universal primitive for AI agents — CLAUDE.md, context files, PRDs — but there's no good native editor for it. And nobody brought version control to writing the way git brought it to code. Engineers solved "who changed what and when" decades ago. Strategy docs are still stuck in `Q4 Plan FINAL v3 (copy).docx`.
+Markdown is the default format for AI agents, but there's no good editor for it. AI writing tools rewrite everything when you just want one paragraph tightened. And documents still don't have real version control outside of closed source systems.
 
 I wanted:
 
-1. **Comment-based editing.** Highlight a section, say "make this clearer," review the diff, accept or reject.
-2. **Git for documents.** Every save tracked, every change attributed, fully reversible.
-3. **Context across documents.** Claude knows about your other docs — not starting from zero every time.
-4. **Instant action from conversation.** Mid-chat, decide "turn this into a memo" and it happens right where you're writing.
+1. **Comment-based editing** — highlight, instruct, review the diff, accept or reject
+2. **Git for documents** — every save tracked, every change attributed, fully reversible
+3. **Cross-document context** — Claude knows about your other docs, not starting from scratch
+4. **Instant action from conversation** — mid-chat, turn a thread into a memo right where you're writing
 
 ---
 
@@ -29,7 +39,7 @@ I wanted:
 4. **Review** suggested edits as inline diffs — accept or reject each one
 5. **Chat** with Claude about your document in the sidebar
 
-**You direct the edits, Claude executes them.** No full rewrites. No leaving your editor. Just a tight loop between your intent and AI.
+You stay in control. Claude suggests, you accept or reject.
 
 ---
 
@@ -45,7 +55,7 @@ I wanted:
 | **File explorer** | Sidebar tree + fuzzy finder (`Cmd+P`) |
 | **Split panes** | View two documents side by side |
 | **Google Docs sync** | Share documents and pull comments back |
-| **Vim mode** | Because of course |
+| **Vim mode** | Toggle in status bar |
 
 ---
 
@@ -94,6 +104,10 @@ npm run dist             # package .app + .dmg
 | `Cmd+T` / `Cmd+W` | New / close tab |
 
 ---
+
+## Contributing
+
+Issues and PRs welcome. If you have ideas or run into bugs, [open an issue](https://github.com/0xSmick/komma/issues).
 
 ## License
 
