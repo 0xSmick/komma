@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell } from 'electron';
 import { spawn, execFile, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -10,6 +10,7 @@ import { uploadHtmlAsGoogleDoc, updateGoogleDoc, clearTokens, getExistingDoc, fe
 import { marked } from 'marked';
 
 const SETTINGS_PATH = path.join(os.homedir(), '.komma', 'config.json');
+const TEMPLATES_DIR = path.join(os.homedir(), '.komma', 'templates');
 
 function readSettings(): Record<string, any> {
   try {
@@ -274,7 +275,7 @@ function scanVaultFiles(vaultRoot: string): Array<{ relativePath: string; firstL
 }
 
 function resolveRefsToContext(
-  refs: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean },
+  refs: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean; skills?: string[] },
   filePath: string,
   vaultRoot: string | null,
 ): string {
@@ -318,6 +319,41 @@ function resolveRefsToContext(
         const content = fs.readFileSync(vaultPath, 'utf-8');
         context += `\n\nReference document (${docRef}):\n\`\`\`\n${content}\n\`\`\``;
       } catch { /* not found in vault either */ }
+    }
+  }
+
+  // @skill references — read skill content and inject into prompt
+  if (refs.skills) {
+    for (const skillName of refs.skills) {
+      let skillContent: string | null = null;
+      if (skillName.includes(':')) {
+        const [plugin, skill] = skillName.split(':', 2);
+        try {
+          const cachePath = path.join(os.homedir(), '.claude', 'plugins', 'cache');
+          for (const marketplace of fs.readdirSync(cachePath)) {
+            const pluginDir = path.join(cachePath, marketplace, plugin);
+            if (!fs.existsSync(pluginDir) || !fs.statSync(pluginDir).isDirectory()) continue;
+            for (const version of fs.readdirSync(pluginDir)) {
+              const skillFile = path.join(pluginDir, version, 'skills', skill, 'SKILL.md');
+              if (fs.existsSync(skillFile)) {
+                skillContent = fs.readFileSync(skillFile, 'utf-8');
+                break;
+              }
+            }
+            if (skillContent) break;
+          }
+        } catch { /* ignore */ }
+      } else {
+        try {
+          const commandPath = path.join(os.homedir(), '.claude', 'commands', `${skillName}.md`);
+          if (fs.existsSync(commandPath)) {
+            skillContent = fs.readFileSync(commandPath, 'utf-8');
+          }
+        } catch { /* ignore */ }
+      }
+      if (skillContent) {
+        context += `\n\nSkill reference (${skillName}):\n\`\`\`\n${skillContent}\n\`\`\``;
+      }
     }
   }
 
@@ -581,7 +617,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle(
     'claude:send-edit',
-    async (_event, prompt: string, filePath: string, model?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }) => {
+    async (_event, prompt: string, filePath: string, model?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean; skills?: string[] }) => {
       if (currentEdit) {
         currentEdit.onData(() => {});
         currentEdit.onComplete(() => {});
@@ -727,7 +763,7 @@ function registerIpcHandlers() {
       contextSelection: string | null,
       history: Array<{ role: string; content: string }>,
       model?: string,
-      refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean },
+      refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean; skills?: string[] },
       images?: Array<{ data: string; mimeType: string; name: string }>,
     ) => {
       if (currentChat) {
@@ -938,6 +974,104 @@ function registerIpcHandlers() {
     return mcps;
   });
 
+  // List Claude Code skills from plugins and user commands
+  ipcMain.handle('claude:list-skills', async () => {
+    const skills: { name: string; description?: string; source?: string }[] = [];
+    const seen = new Set<string>();
+
+    // 1. Plugin skills: ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/skills/*/SKILL.md
+    try {
+      const cachePath = path.join(os.homedir(), '.claude', 'plugins', 'cache');
+      if (fs.existsSync(cachePath)) {
+        for (const marketplace of fs.readdirSync(cachePath)) {
+          const mpDir = path.join(cachePath, marketplace);
+          if (!fs.statSync(mpDir).isDirectory()) continue;
+          for (const plugin of fs.readdirSync(mpDir)) {
+            const pluginDir = path.join(mpDir, plugin);
+            if (!fs.statSync(pluginDir).isDirectory()) continue;
+            for (const version of fs.readdirSync(pluginDir)) {
+              const skillsDir = path.join(pluginDir, version, 'skills');
+              if (!fs.existsSync(skillsDir) || !fs.statSync(skillsDir).isDirectory()) continue;
+              for (const skillName of fs.readdirSync(skillsDir)) {
+                const skillFile = path.join(skillsDir, skillName, 'SKILL.md');
+                if (!fs.existsSync(skillFile)) continue;
+                const key = `${plugin}:${skillName}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                // Extract description from YAML frontmatter
+                let description: string | undefined;
+                try {
+                  const content = fs.readFileSync(skillFile, 'utf-8');
+                  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+                  if (fmMatch) {
+                    const descMatch = fmMatch[1].match(/^description:\s*(.+)$/m);
+                    if (descMatch) description = descMatch[1].trim();
+                  }
+                } catch { /* ignore */ }
+                skills.push({ name: key, description, source: plugin });
+              }
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    // 2. User commands: ~/.claude/commands/*.md
+    try {
+      const commandsDir = path.join(os.homedir(), '.claude', 'commands');
+      if (fs.existsSync(commandsDir)) {
+        for (const file of fs.readdirSync(commandsDir)) {
+          if (!file.endsWith('.md')) continue;
+          const name = file.replace(/\.md$/, '');
+          if (seen.has(name)) continue;
+          seen.add(name);
+          // Use first heading or first line as description
+          let description: string | undefined;
+          try {
+            const content = fs.readFileSync(path.join(commandsDir, file), 'utf-8');
+            const headingMatch = content.match(/^#\s+(.+)$/m);
+            if (headingMatch) description = headingMatch[1].trim();
+          } catch { /* ignore */ }
+          skills.push({ name, description, source: 'user' });
+        }
+      }
+    } catch { /* ignore */ }
+
+    return skills;
+  });
+
+  // Read a skill's content by name
+  ipcMain.handle('claude:read-skill', async (_event, skillName: string) => {
+    // Plugin skill: name is "plugin:skillName"
+    if (skillName.includes(':')) {
+      const [plugin, skill] = skillName.split(':', 2);
+      try {
+        const cachePath = path.join(os.homedir(), '.claude', 'plugins', 'cache');
+        for (const marketplace of fs.readdirSync(cachePath)) {
+          const pluginDir = path.join(cachePath, marketplace, plugin);
+          if (!fs.existsSync(pluginDir) || !fs.statSync(pluginDir).isDirectory()) continue;
+          for (const version of fs.readdirSync(pluginDir)) {
+            const skillFile = path.join(pluginDir, version, 'skills', skill, 'SKILL.md');
+            if (fs.existsSync(skillFile)) {
+              return fs.readFileSync(skillFile, 'utf-8');
+            }
+          }
+        }
+      } catch { /* ignore */ }
+      return null;
+    }
+
+    // User command: name without extension
+    try {
+      const commandPath = path.join(os.homedir(), '.claude', 'commands', `${skillName}.md`);
+      if (fs.existsSync(commandPath)) {
+        return fs.readFileSync(commandPath, 'utf-8');
+      }
+    } catch { /* ignore */ }
+
+    return null;
+  });
+
   ipcMain.handle('claude:cancel', async () => {
     if (currentEdit) {
       currentEdit.kill();
@@ -1135,6 +1269,46 @@ function registerIpcHandlers() {
     return settings;
   });
 
+  // ── Custom Templates CRUD ──
+  ipcMain.handle('templates:list-custom', async () => {
+    try {
+      if (!fs.existsSync(TEMPLATES_DIR)) return [];
+      const files = fs.readdirSync(TEMPLATES_DIR).filter(f => f.endsWith('.json'));
+      const templates: any[] = [];
+      for (const file of files) {
+        try {
+          const data = JSON.parse(fs.readFileSync(path.join(TEMPLATES_DIR, file), 'utf-8'));
+          templates.push({ ...data, isCustom: true });
+        } catch { /* skip invalid files */ }
+      }
+      return templates;
+    } catch { return []; }
+  });
+
+  ipcMain.handle('templates:save-custom', async (_event, template: {
+    id: string; name: string; description: string; promptPrefix: string;
+    sections: string[]; skeleton: string; mcpRefs?: string[];
+  }) => {
+    try {
+      if (!fs.existsSync(TEMPLATES_DIR)) fs.mkdirSync(TEMPLATES_DIR, { recursive: true });
+      const filePath = path.join(TEMPLATES_DIR, `${template.id}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(template, null, 2));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('templates:delete-custom', async (_event, templateId: string) => {
+    try {
+      const filePath = path.join(TEMPLATES_DIR, `${templateId}.json`);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('dialog:open-directory', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory'],
@@ -1304,6 +1478,54 @@ th { background-color: #f0f0f0; font-weight: bold; }
       return { clientId: '', clientSecret: '' };
     }
   });
+
+  // ── Quick Capture ──
+  ipcMain.handle('quick-capture:infer-template', async (_event, description: string) => {
+    const lower = description.toLowerCase();
+    const mapping: Array<{ keywords: string[]; templateId: string; folder: string }> = [
+      { keywords: ['prd', 'product requirement', 'feature spec', 'requirements doc'], templateId: 'prd', folder: 'prds' },
+      { keywords: ['meeting', 'standup', 'sync', '1:1', 'retro', 'retrospective', 'kickoff'], templateId: 'meeting', folder: 'meetings' },
+      { keywords: ['strategy', 'roadmap', 'strategic plan', 'go-to-market', 'gtm'], templateId: 'strategy', folder: 'strategy' },
+      { keywords: ['analysis', 'research', 'investigation', 'audit', 'review', 'deep dive'], templateId: 'analysis', folder: 'analysis' },
+    ];
+    for (const { keywords, templateId, folder } of mapping) {
+      if (keywords.some(kw => lower.includes(kw))) {
+        return { templateId, folder };
+      }
+    }
+    return { templateId: 'blank', folder: '' };
+  });
+
+  ipcMain.handle('quick-capture:get-shortcut', async () => {
+    const settings = readSettings();
+    return settings.quickCaptureShortcut || 'CommandOrControl+Shift+Space';
+  });
+
+  ipcMain.handle('quick-capture:set-shortcut', async (_event, shortcut: string) => {
+    const settings = readSettings();
+    const old = settings.quickCaptureShortcut || 'CommandOrControl+Shift+Space';
+    settings.quickCaptureShortcut = shortcut;
+    writeSettings(settings);
+    try { globalShortcut.unregister(old); } catch { /* noop */ }
+    registerQuickCaptureShortcut(shortcut);
+    return { success: true };
+  });
+}
+
+function registerQuickCaptureShortcut(accelerator?: string) {
+  const shortcut = accelerator || readSettings().quickCaptureShortcut || 'CommandOrControl+Shift+Space';
+  try {
+    globalShortcut.register(shortcut, () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('menu:action', 'quick-capture');
+      }
+    });
+  } catch (err) {
+    console.error(`Failed to register global shortcut ${shortcut}:`, err);
+  }
 }
 
 function buildAppMenu() {
@@ -1483,6 +1705,7 @@ app.whenReady().then(async () => {
 
     registerIpcHandlers();
     buildAppMenu();
+    registerQuickCaptureShortcut();
     createWindow(serverPort);
 
     // Watch for file-open requests from the AppleScript wrapper
@@ -1532,6 +1755,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
+  globalShortcut.unregisterAll();
   try { fs.unwatchFile(PENDING_FILE); } catch { /* noop */ }
   if (nextServer && !nextServer.killed) {
     nextServer.kill('SIGTERM');

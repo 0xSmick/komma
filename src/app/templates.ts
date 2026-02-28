@@ -6,6 +6,8 @@ export interface Template {
   promptPrefix: string;
   sections: string[];
   skeleton: string;
+  mcpRefs?: string[];
+  isCustom?: boolean;
 }
 
 export const templates: Template[] = [

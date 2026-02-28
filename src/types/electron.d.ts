@@ -5,6 +5,7 @@ interface VaultRefs {
   mcps: string[];
   vault?: boolean;
   architecture?: boolean;
+  skills?: string[];
 }
 
 interface GitCommit {
@@ -60,6 +61,23 @@ declare global {
         push(filePath: string, message?: string): Promise<{ success: boolean; error?: string; sha?: string; remote?: string; branch?: string; fileUrl?: string }>;
         remoteInfo(filePath: string): Promise<{ success: boolean; remoteUrl?: string | null; remoteName?: string | null; branch?: string | null; error?: string }>;
       };
+      templates: {
+        listCustom(): Promise<Array<{
+          id: string; name: string; icon: string; description: string;
+          promptPrefix: string; sections: string[]; skeleton: string;
+          mcpRefs?: string[]; isCustom: boolean;
+        }>>;
+        saveCustom(template: {
+          id: string; name: string; description: string; promptPrefix: string;
+          sections: string[]; skeleton: string; mcpRefs?: string[];
+        }): Promise<{ success: boolean; error?: string }>;
+        deleteCustom(templateId: string): Promise<{ success: boolean; error?: string }>;
+      };
+      quickCapture: {
+        inferTemplate(description: string): Promise<{ templateId: string; folder: string }>;
+        getShortcut(): Promise<string>;
+        setShortcut(shortcut: string): Promise<{ success: boolean }>;
+      };
       claude: {
         sendEdit(prompt: string, filePath: string, model?: string, refs?: VaultRefs): Promise<void>;
         sendChat(
@@ -81,6 +99,8 @@ declare global {
           model?: string,
         ): Promise<{ success: boolean; revisedText?: string; error?: string }>;
         listMcps(): Promise<{ name: string; source?: string }[]>;
+        listSkills(): Promise<{ name: string; description?: string; source?: string }[]>;
+        readSkill(name: string): Promise<string | null>;
         onStream(
           callback: (data: { type: 'edit' | 'chat'; content: string }) => void
         ): () => void;

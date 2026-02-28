@@ -17,6 +17,8 @@ interface NewDocumentModalProps {
   onCancel: () => void;
 }
 
+const DEFAULT_CUSTOM_ICON = 'M4 4h16v16H4zM8 8h8M8 12h8M8 16h4';
+
 export default function NewDocumentModal({
   show,
   currentDir,
@@ -33,8 +35,30 @@ export default function NewDocumentModal({
   const [selectedContextPaths, setSelectedContextPaths] = useState<string[]>([]);
   const [contextOpen, setContextOpen] = useState(false);
 
+  // Custom template state
+  const [customTemplates, setCustomTemplates] = useState<Template[]>([]);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newTplName, setNewTplName] = useState('');
+  const [newTplDescription, setNewTplDescription] = useState('');
+  const [newTplPromptPrefix, setNewTplPromptPrefix] = useState('');
+  const [newTplSections, setNewTplSections] = useState('');
+  const [availableMcps, setAvailableMcps] = useState<{ name: string; source?: string }[]>([]);
+  const [selectedMcpRefs, setSelectedMcpRefs] = useState<string[]>([]);
+
   const fileNameRef = useRef<HTMLInputElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  const loadCustomTemplates = useCallback(async () => {
+    if (!window.electronAPI?.templates) return;
+    try {
+      const list = await window.electronAPI.templates.listCustom();
+      setCustomTemplates(list.map((t: any) => ({
+        ...t,
+        icon: t.icon || DEFAULT_CUSTOM_ICON,
+        isCustom: true,
+      })));
+    } catch { setCustomTemplates([]); }
+  }, []);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -46,8 +70,21 @@ export default function NewDocumentModal({
       setPrompt('');
       setSelectedContextPaths([]);
       setContextOpen(false);
+      setShowCreateForm(false);
+      setNewTplName('');
+      setNewTplDescription('');
+      setNewTplPromptPrefix('');
+      setNewTplSections('');
+      setSelectedMcpRefs([]);
+      loadCustomTemplates();
+      // Load available MCPs for the create form
+      if (window.electronAPI?.claude?.listMcps) {
+        window.electronAPI.claude.listMcps()
+          .then(setAvailableMcps)
+          .catch(() => setAvailableMcps([]));
+      }
     }
-  }, [show]);
+  }, [show, loadCustomTemplates]);
 
   // Fetch sibling .md files for context picker when entering step 2
   useEffect(() => {
@@ -114,6 +151,12 @@ export default function NewDocumentModal({
       fullPrompt = `${selectedTemplate.promptPrefix}\n\nStructure the document with these sections:\n${selectedTemplate.skeleton}\nDescription: ${prompt}`;
     }
 
+    // Inject MCP references from custom template
+    if (selectedTemplate.mcpRefs && selectedTemplate.mcpRefs.length > 0) {
+      const mcpLines = selectedTemplate.mcpRefs.map(ref => `@mcp:${ref}`).join('\n');
+      fullPrompt += `\n\n${mcpLines}`;
+    }
+
     // Fetch and append context docs
     if (selectedContextPaths.length > 0) {
       const contextParts: string[] = [];
@@ -154,6 +197,43 @@ export default function NewDocumentModal({
     onCreateBlank(filePath);
   }, [fileName, currentDir, onCreateBlank]);
 
+  const handleSaveCustomTemplate = useCallback(async () => {
+    if (!newTplName.trim() || !window.electronAPI?.templates) return;
+    const id = newTplName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const sections = newTplSections.trim()
+      ? newTplSections.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+    const skeleton = sections.length > 0
+      ? `# [Title]\n\n${sections.map(s => `## ${s}`).join('\n\n')}\n`
+      : '';
+
+    const result = await window.electronAPI.templates.saveCustom({
+      id,
+      name: newTplName.trim(),
+      description: newTplDescription.trim() || `Custom ${newTplName.trim()} template`,
+      promptPrefix: newTplPromptPrefix.trim() || `Write a ${newTplName.trim()} document.`,
+      sections,
+      skeleton,
+      mcpRefs: selectedMcpRefs.length > 0 ? selectedMcpRefs : undefined,
+    });
+
+    if (result.success) {
+      setShowCreateForm(false);
+      setNewTplName('');
+      setNewTplDescription('');
+      setNewTplPromptPrefix('');
+      setNewTplSections('');
+      setSelectedMcpRefs([]);
+      loadCustomTemplates();
+    }
+  }, [newTplName, newTplDescription, newTplPromptPrefix, newTplSections, selectedMcpRefs, loadCustomTemplates]);
+
+  const handleDeleteCustomTemplate = useCallback(async (templateId: string) => {
+    if (!window.electronAPI?.templates) return;
+    await window.electronAPI.templates.deleteCustom(templateId);
+    loadCustomTemplates();
+  }, [loadCustomTemplates]);
+
   if (!show) return null;
 
   const canSubmit = fileName.trim() && prompt.trim();
@@ -186,7 +266,8 @@ export default function NewDocumentModal({
         }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
-            if (step === 2) handleBack();
+            if (showCreateForm) setShowCreateForm(false);
+            else if (step === 2) handleBack();
             else onCancel();
           }
         }}
@@ -258,7 +339,7 @@ export default function NewDocumentModal({
 
         {/* ──── Step 1: Template Selection ──── */}
         {step === 1 && (
-          <div className="p-6">
+          <div className="p-6" style={{ overflowY: 'auto', flex: 1 }}>
             <p
               className="text-sm mb-4"
               style={{ color: 'var(--color-ink-muted)', fontFamily: 'var(--font-sans)' }}
@@ -320,6 +401,308 @@ export default function NewDocumentModal({
                 </div>
               ))}
             </div>
+
+            {/* ── Custom Templates ── */}
+            {customTemplates.length > 0 && (
+              <>
+                <div
+                  className="text-xs font-medium uppercase tracking-wide mt-6 mb-3"
+                  style={{ color: 'var(--color-ink-faded)', fontFamily: 'var(--font-sans)' }}
+                >
+                  Custom Templates
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '12px',
+                  }}
+                >
+                  {customTemplates.map((t) => (
+                    <div
+                      key={t.id}
+                      className="template-card"
+                      style={{ position: 'relative' }}
+                      onClick={() => handleSelectTemplate(t)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSelectTemplate(t);
+                        }
+                      }}
+                    >
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCustomTemplate(t.id);
+                        }}
+                        className="btn-ghost"
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          width: '22px',
+                          height: '22px',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0,
+                        }}
+                        title="Delete template"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="var(--color-ink-faded)"
+                          strokeWidth="2"
+                        >
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                      <svg
+                        width="28"
+                        height="28"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="var(--color-accent)"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d={t.icon} />
+                      </svg>
+                      <span
+                        className="text-sm font-semibold"
+                        style={{ color: 'var(--color-ink)', fontFamily: 'var(--font-sans)' }}
+                      >
+                        {t.name}
+                      </span>
+                      <span
+                        className="text-xs"
+                        style={{
+                          color: 'var(--color-ink-muted)',
+                          fontFamily: 'var(--font-sans)',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {t.description}
+                      </span>
+                      {t.mcpRefs && t.mcpRefs.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {t.mcpRefs.map((ref) => (
+                            <span
+                              key={ref}
+                              className="text-xs px-1.5 py-0.5 rounded"
+                              style={{
+                                background: 'var(--color-accent-subtle)',
+                                color: 'var(--color-accent)',
+                                fontFamily: 'var(--font-sans)',
+                                fontSize: '10px',
+                              }}
+                            >
+                              @{ref}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── Create Template Button / Form ── */}
+            {!showCreateForm ? (
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="w-full mt-4 py-2.5 text-sm rounded-lg btn-ghost flex items-center justify-center gap-2"
+                style={{
+                  color: 'var(--color-ink-muted)',
+                  fontFamily: 'var(--font-sans)',
+                  border: '2px dashed var(--color-border)',
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                Create Template
+              </button>
+            ) : (
+              <div
+                className="mt-4 p-4 rounded-lg flex flex-col gap-3"
+                style={{
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-paper)',
+                }}
+              >
+                <div
+                  className="text-xs font-medium uppercase tracking-wide"
+                  style={{ color: 'var(--color-ink-faded)', fontFamily: 'var(--font-sans)' }}
+                >
+                  New Custom Template
+                </div>
+                <input
+                  type="text"
+                  value={newTplName}
+                  onChange={(e) => setNewTplName(e.target.value)}
+                  placeholder="Template name"
+                  className="w-full px-3 py-2 text-sm rounded-lg focus:outline-none"
+                  style={{
+                    border: '2px solid var(--color-border)',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'var(--color-ink)',
+                    background: 'var(--color-surface)',
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-accent)';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-border)';
+                  }}
+                  autoFocus
+                />
+                <input
+                  type="text"
+                  value={newTplDescription}
+                  onChange={(e) => setNewTplDescription(e.target.value)}
+                  placeholder="Short description"
+                  className="w-full px-3 py-2 text-sm rounded-lg focus:outline-none"
+                  style={{
+                    border: '2px solid var(--color-border)',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'var(--color-ink)',
+                    background: 'var(--color-surface)',
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-accent)';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-border)';
+                  }}
+                />
+                <input
+                  type="text"
+                  value={newTplPromptPrefix}
+                  onChange={(e) => setNewTplPromptPrefix(e.target.value)}
+                  placeholder="Prompt prefix (e.g. 'Write a technical spec.')"
+                  className="w-full px-3 py-2 text-sm rounded-lg focus:outline-none"
+                  style={{
+                    border: '2px solid var(--color-border)',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'var(--color-ink)',
+                    background: 'var(--color-surface)',
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-accent)';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-border)';
+                  }}
+                />
+                <input
+                  type="text"
+                  value={newTplSections}
+                  onChange={(e) => setNewTplSections(e.target.value)}
+                  placeholder="Sections (comma-separated, e.g. Overview, Requirements)"
+                  className="w-full px-3 py-2 text-sm rounded-lg focus:outline-none"
+                  style={{
+                    border: '2px solid var(--color-border)',
+                    fontFamily: 'var(--font-sans)',
+                    color: 'var(--color-ink)',
+                    background: 'var(--color-surface)',
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-accent)';
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--color-border)';
+                  }}
+                />
+
+                {/* MCP References */}
+                {availableMcps.length > 0 && (
+                  <div>
+                    <label
+                      className="text-xs font-medium uppercase tracking-wide mb-1.5 block"
+                      style={{ color: 'var(--color-ink-faded)', fontFamily: 'var(--font-sans)' }}
+                    >
+                      MCP References
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {availableMcps.map((mcp) => {
+                        const isSelected = selectedMcpRefs.includes(mcp.name);
+                        return (
+                          <button
+                            key={mcp.name}
+                            onClick={() =>
+                              setSelectedMcpRefs((prev) =>
+                                isSelected
+                                  ? prev.filter((r) => r !== mcp.name)
+                                  : [...prev, mcp.name]
+                              )
+                            }
+                            className="text-xs px-2 py-1 rounded-md transition-all"
+                            style={{
+                              fontFamily: 'var(--font-sans)',
+                              border: `1.5px solid ${isSelected ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                              background: isSelected ? 'var(--color-accent-subtle)' : 'transparent',
+                              color: isSelected ? 'var(--color-accent)' : 'var(--color-ink-muted)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            @{mcp.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 mt-1">
+                  <button
+                    onClick={() => {
+                      setShowCreateForm(false);
+                      setNewTplName('');
+                      setNewTplDescription('');
+                      setNewTplPromptPrefix('');
+                      setNewTplSections('');
+                      setSelectedMcpRefs([]);
+                    }}
+                    className="px-3 py-1.5 text-sm rounded-md btn-ghost"
+                    style={{ color: 'var(--color-ink-muted)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveCustomTemplate}
+                    disabled={!newTplName.trim()}
+                    className="px-4 py-1.5 text-sm rounded-md font-medium transition-all disabled:opacity-40"
+                    style={{
+                      background: newTplName.trim() ? 'var(--color-accent)' : 'var(--color-border)',
+                      color: newTplName.trim() ? 'var(--color-vim-insert-fg)' : 'var(--color-ink-faded)',
+                    }}
+                  >
+                    Save Template
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -427,6 +810,33 @@ export default function NewDocumentModal({
                   }}
                 />
               </div>
+
+              {/* MCP refs indicator for custom templates */}
+              {selectedTemplate.mcpRefs && selectedTemplate.mcpRefs.length > 0 && (
+                <div>
+                  <label
+                    className="text-xs font-medium uppercase tracking-wide mb-2 block"
+                    style={{ color: 'var(--color-ink-faded)' }}
+                  >
+                    Included MCP References
+                  </label>
+                  <div className="flex flex-wrap gap-1.5" style={{ fontFamily: 'var(--font-sans)' }}>
+                    {selectedTemplate.mcpRefs.map((ref) => (
+                      <span
+                        key={ref}
+                        className="text-xs px-2 py-1 rounded-md"
+                        style={{
+                          background: 'var(--color-accent-subtle)',
+                          color: 'var(--color-accent)',
+                          border: '1px solid var(--color-accent)',
+                        }}
+                      >
+                        @mcp:{ref}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Suggested sections (read-only reference) */}
               {selectedTemplate.sections.length > 0 && (

@@ -89,6 +89,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke('git:remote-info', filePath);
     },
   },
+  templates: {
+    listCustom(): Promise<any[]> {
+      return ipcRenderer.invoke('templates:list-custom');
+    },
+    saveCustom(template: {
+      id: string; name: string; description: string; promptPrefix: string;
+      sections: string[]; skeleton: string; mcpRefs?: string[];
+    }): Promise<{ success: boolean; error?: string }> {
+      return ipcRenderer.invoke('templates:save-custom', template);
+    },
+    deleteCustom(templateId: string): Promise<{ success: boolean; error?: string }> {
+      return ipcRenderer.invoke('templates:delete-custom', templateId);
+    },
+  },
+  quickCapture: {
+    inferTemplate(description: string): Promise<{ templateId: string; folder: string }> {
+      return ipcRenderer.invoke('quick-capture:infer-template', description);
+    },
+    getShortcut(): Promise<string> {
+      return ipcRenderer.invoke('quick-capture:get-shortcut');
+    },
+    setShortcut(shortcut: string): Promise<{ success: boolean }> {
+      return ipcRenderer.invoke('quick-capture:set-shortcut', shortcut);
+    },
+  },
   claude: {
     sendEdit(prompt: string, filePath: string, model?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }): Promise<void> {
       return ipcRenderer.invoke('claude:send-edit', prompt, filePath, model, refs);
@@ -124,6 +149,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     listMcps(): Promise<{ name: string; source?: string }[]> {
       return ipcRenderer.invoke('claude:list-mcps');
+    },
+    listSkills(): Promise<{ name: string; description?: string; source?: string }[]> {
+      return ipcRenderer.invoke('claude:list-skills');
+    },
+    readSkill(name: string): Promise<string | null> {
+      return ipcRenderer.invoke('claude:read-skill', name);
     },
     onStream(
       callback: (data: { type: 'edit' | 'chat'; content: string }) => void,
