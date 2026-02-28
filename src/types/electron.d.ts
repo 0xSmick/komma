@@ -61,6 +61,18 @@ declare global {
         push(filePath: string, message?: string): Promise<{ success: boolean; error?: string; sha?: string; remote?: string; branch?: string; fileUrl?: string }>;
         remoteInfo(filePath: string): Promise<{ success: boolean; remoteUrl?: string | null; remoteName?: string | null; branch?: string | null; error?: string }>;
       };
+      templates: {
+        listCustom(): Promise<Array<{
+          id: string; name: string; icon: string; description: string;
+          promptPrefix: string; sections: string[]; skeleton: string;
+          mcpRefs?: string[]; isCustom: boolean;
+        }>>;
+        saveCustom(template: {
+          id: string; name: string; description: string; promptPrefix: string;
+          sections: string[]; skeleton: string; mcpRefs?: string[];
+        }): Promise<{ success: boolean; error?: string }>;
+        deleteCustom(templateId: string): Promise<{ success: boolean; error?: string }>;
+      };
       quickCapture: {
         inferTemplate(description: string): Promise<{ templateId: string; folder: string }>;
         getShortcut(): Promise<string>;

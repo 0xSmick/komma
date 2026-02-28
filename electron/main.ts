@@ -10,6 +10,7 @@ import { uploadHtmlAsGoogleDoc, updateGoogleDoc, clearTokens, getExistingDoc, fe
 import { marked } from 'marked';
 
 const SETTINGS_PATH = path.join(os.homedir(), '.komma', 'config.json');
+const TEMPLATES_DIR = path.join(os.homedir(), '.komma', 'templates');
 
 function readSettings(): Record<string, any> {
   try {
@@ -997,6 +998,7 @@ function registerIpcHandlers() {
                 const key = `${plugin}:${skillName}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
+                // Extract description from YAML frontmatter
                 let description: string | undefined;
                 try {
                   const content = fs.readFileSync(skillFile, 'utf-8');
@@ -1023,6 +1025,7 @@ function registerIpcHandlers() {
           const name = file.replace(/\.md$/, '');
           if (seen.has(name)) continue;
           seen.add(name);
+          // Use first heading or first line as description
           let description: string | undefined;
           try {
             const content = fs.readFileSync(path.join(commandsDir, file), 'utf-8');
@@ -1264,6 +1267,46 @@ function registerIpcHandlers() {
     settings[key] = value;
     writeSettings(settings);
     return settings;
+  });
+
+  // ── Custom Templates CRUD ──
+  ipcMain.handle('templates:list-custom', async () => {
+    try {
+      if (!fs.existsSync(TEMPLATES_DIR)) return [];
+      const files = fs.readdirSync(TEMPLATES_DIR).filter(f => f.endsWith('.json'));
+      const templates: any[] = [];
+      for (const file of files) {
+        try {
+          const data = JSON.parse(fs.readFileSync(path.join(TEMPLATES_DIR, file), 'utf-8'));
+          templates.push({ ...data, isCustom: true });
+        } catch { /* skip invalid files */ }
+      }
+      return templates;
+    } catch { return []; }
+  });
+
+  ipcMain.handle('templates:save-custom', async (_event, template: {
+    id: string; name: string; description: string; promptPrefix: string;
+    sections: string[]; skeleton: string; mcpRefs?: string[];
+  }) => {
+    try {
+      if (!fs.existsSync(TEMPLATES_DIR)) fs.mkdirSync(TEMPLATES_DIR, { recursive: true });
+      const filePath = path.join(TEMPLATES_DIR, `${template.id}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(template, null, 2));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('templates:delete-custom', async (_event, templateId: string) => {
+    try {
+      const filePath = path.join(TEMPLATES_DIR, `${templateId}.json`);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   });
 
   ipcMain.handle('dialog:open-directory', async () => {

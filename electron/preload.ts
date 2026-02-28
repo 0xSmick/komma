@@ -89,6 +89,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke('git:remote-info', filePath);
     },
   },
+  templates: {
+    listCustom(): Promise<any[]> {
+      return ipcRenderer.invoke('templates:list-custom');
+    },
+    saveCustom(template: {
+      id: string; name: string; description: string; promptPrefix: string;
+      sections: string[]; skeleton: string; mcpRefs?: string[];
+    }): Promise<{ success: boolean; error?: string }> {
+      return ipcRenderer.invoke('templates:save-custom', template);
+    },
+    deleteCustom(templateId: string): Promise<{ success: boolean; error?: string }> {
+      return ipcRenderer.invoke('templates:delete-custom', templateId);
+    },
+  },
   quickCapture: {
     inferTemplate(description: string): Promise<{ templateId: string; folder: string }> {
       return ipcRenderer.invoke('quick-capture:infer-template', description);
