@@ -1,5 +1,5 @@
 #!/bin/bash
-# curl -fsSL https://raw.githubusercontent.com/0xSmick/helm/main/scripts/install.sh | bash
+# curl -fsSL https://raw.githubusercontent.com/komma-app/komma/main/scripts/install.sh | bash
 set -e
 
 RED='\033[0;31m'
@@ -8,7 +8,7 @@ YELLOW='\033[0;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-echo -e "${BOLD}Helm — AI Document Editor${NC}"
+echo -e "${BOLD}Komma — AI Document Editor${NC}"
 echo ""
 
 # Check prerequisites
@@ -47,7 +47,7 @@ if [ "$claude_found" = false ]; then
 fi
 
 # Clone
-INSTALL_DIR="${HELM_DIR:-$HOME/Developer/helm}"
+INSTALL_DIR="${KOMMA_DIR:-$HOME/Developer/komma}"
 
 if [ -d "$INSTALL_DIR" ]; then
   echo "Directory $INSTALL_DIR already exists."
@@ -61,7 +61,7 @@ if [ -d "$INSTALL_DIR" ]; then
   fi
 else
   echo "Cloning to $INSTALL_DIR..."
-  git clone https://github.com/0xSmick/helm.git "$INSTALL_DIR"
+  git clone https://github.com/komma-app/komma.git "$INSTALL_DIR"
   cd "$INSTALL_DIR"
 fi
 
@@ -77,7 +77,7 @@ npx tsc -p tsconfig.electron.json
 mkdir -p data
 
 echo ""
-echo -e "${GREEN}${BOLD}Helm installed!${NC}"
+echo -e "${GREEN}${BOLD}Komma installed!${NC}"
 echo ""
 echo "  cd $INSTALL_DIR"
 echo "  npm run electron:dev"

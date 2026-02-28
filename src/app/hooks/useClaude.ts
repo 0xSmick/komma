@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Comment } from '../types';
 import { DiffChunk, computeChunkedDiff, finalizeChunks as buildFinalMarkdown } from '../../lib/diff';
 
@@ -39,6 +39,22 @@ export function useClaude({
   const [afterMarkdown, setAfterMarkdown] = useState<string | null>(null);
   const [diffChunks, setDiffChunks] = useState<DiffChunk[]>([]);
   const beforeMarkdownRef = useRef<string | null>(null);
+  const editCleanupRef = useRef<{ stream: (() => void) | null; complete: (() => void) | null }>({ stream: null, complete: null });
+
+  const cleanupEditListeners = useCallback(() => {
+    editCleanupRef.current.stream?.();
+    editCleanupRef.current.complete?.();
+    editCleanupRef.current = { stream: null, complete: null };
+  }, []);
+
+  // Clean up IPC listeners on unmount (prevents ghost listeners during HMR)
+  useEffect(() => {
+    return () => {
+      editCleanupRef.current.stream?.();
+      editCleanupRef.current.complete?.();
+      editCleanupRef.current = { stream: null, complete: null };
+    };
+  }, []);
 
   const loadLastOutput = useCallback(async () => {
     try {
@@ -113,6 +129,13 @@ export function useClaude({
   const finalizeChunks = useCallback(async () => {
     const finalContent = buildFinalMarkdown(diffChunks);
     try {
+      // Create snapshot with claude_edit source before saving file
+      // (the file save handler's dedup will skip since content matches)
+      await fetch('/api/snapshots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_path: filePath, content: finalContent, source: 'claude_edit' }),
+      });
       await fetch('/api/file', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -132,11 +155,12 @@ export function useClaude({
     if (api) {
       await api.claude.cancel();
     }
+    cleanupEditListeners();
     editActiveRef.current = false;
     setIsSending(false);
     setIsStreaming(false);
     setClaudeOutput('Edit cancelled');
-  }, []);
+  }, [cleanupEditListeners]);
 
   const restoreState = useCallback((before: string | null, after: string | null, output: string, stream: string, showLast: boolean, chunks?: DiffChunk[]) => {
     setBeforeMarkdown(before);
@@ -192,6 +216,9 @@ export function useClaude({
       const api = window.electronAPI!;
       const revisePrompt = `I have a proposed text change. Revise the proposed version based on this feedback.\n\nOriginal text:\n"""\n${beforeText}\n"""\n\nCurrent proposed text:\n"""\n${afterText}\n"""\n\nRevision instruction: ${instruction}\n\nRespond with ONLY the revised text, no explanation.`;
 
+      // Clean up any stale edit listeners before registering revision listeners
+      cleanupEditListeners();
+
       let revisedText = '';
       const cleanupStream = api.claude.onStream((data) => {
         if (data.type === 'edit') revisedText = data.content;
@@ -200,6 +227,7 @@ export function useClaude({
         if (data.type !== 'edit') return;
         cleanupStream();
         cleanupComplete();
+        editCleanupRef.current = { stream: null, complete: null };
         if (data.success && data.content) {
           const newAfterLines = data.content.trim().split('\n');
           setDiffChunks(prev => prev.map(c =>
@@ -212,6 +240,7 @@ export function useClaude({
         }
       });
 
+      editCleanupRef.current = { stream: cleanupStream, complete: cleanupComplete };
       await api.claude.sendEdit(revisePrompt, filePath, model);
     } catch {
       setDiffChunks(prev => prev.map(c =>
@@ -277,6 +306,9 @@ export function useClaude({
       try {
         setClaudeOutput('Waiting for Claude Code to process changes...');
 
+        // Clean up any stale listeners from previous cancelled/failed edits
+        cleanupEditListeners();
+
         const cleanupStream = api.claude.onStream((data) => {
           if (data.type === 'edit') {
             setStreamOutput(data.content);
@@ -287,41 +319,61 @@ export function useClaude({
         });
 
         const cleanupComplete = api.claude.onComplete(async (data) => {
-          if (data.type === 'edit' && editActiveRef.current) {
-            editActiveRef.current = false;
-            cleanupStream();
-            cleanupComplete();
-            if (data.success) {
-              const successMessage = 'Changes applied — review changes below';
-              setClaudeOutput(successMessage);
-              markApplied();
-              await patchChangelog('completed', data.content, successMessage);
+          if (data.type !== 'edit') return;
+          // Always clean up listeners and reset state, even if editActiveRef is stale
+          cleanupStream();
+          cleanupComplete();
+          editCleanupRef.current = { stream: null, complete: null };
+
+          if (!editActiveRef.current) {
+            setIsSending(false);
+            setIsStreaming(false);
+            return;
+          }
+
+          editActiveRef.current = false;
+
+          if (data.success) {
+            const successMessage = data.proposal
+              ? 'Changes ready — review below before applying'
+              : 'Changes applied — review changes below';
+            setClaudeOutput(successMessage);
+            markApplied();
+            await patchChangelog('completed', data.content, successMessage);
+
+            if (data.proposal) {
+              // Proposal-based: use the proposed content from the temp file diff
+              setAfterMarkdown(data.proposal.proposedContent);
+              const saved = beforeMarkdownRef.current;
+              if (saved) {
+                setDiffChunks(computeChunkedDiff(saved, data.proposal.proposedContent));
+              }
+            } else {
+              // Fallback: read file content (for new file creation)
               try {
                 const newFileRes = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
                 const newFileData = await newFileRes.json();
-                if (newFileData.content) {
+                const saved = beforeMarkdownRef.current;
+                if (newFileData.content && saved && newFileData.content !== saved) {
                   setAfterMarkdown(newFileData.content);
-                  // Compute chunked diff for per-chunk review
-                  const saved = beforeMarkdownRef.current;
-                  if (saved) {
-                    setDiffChunks(computeChunkedDiff(saved, newFileData.content));
-                  }
+                  setDiffChunks(computeChunkedDiff(saved, newFileData.content));
                 }
               } catch (e) {
                 // Ignore — diff just won't show
               }
               await loadDocument();
-              setActiveTab('edits');
-            } else {
-              const errorMessage = data.error || 'Failed to apply changes';
-              setClaudeOutput(`Error: ${errorMessage}`);
-              await patchChangelog('error', data.content, errorMessage);
             }
-            setIsSending(false);
-            setIsStreaming(false);
+            setActiveTab('edits');
+          } else {
+            const errorMessage = data.error || 'Failed to apply changes';
+            setClaudeOutput(`Error: ${errorMessage}`);
+            await patchChangelog('error', data.content, errorMessage);
           }
+          setIsSending(false);
+          setIsStreaming(false);
         });
 
+        editCleanupRef.current = { stream: cleanupStream, complete: cleanupComplete };
         editActiveRef.current = true;
         await api.claude.sendEdit(prompt, filePath, model, refs);
       } catch (error) {

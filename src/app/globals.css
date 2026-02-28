@@ -3,7 +3,7 @@
 
 /* ═══════════════════════════════════════════
    LIGHT MODE — "Cloud"
-   Helm Violet — clean, cool, precise
+   Komma Violet — clean, cool, precise
    ═══════════════════════════════════════════ */
 :root {
   --color-paper: #FAFAFA;
@@ -13,7 +13,7 @@
   --color-ink-muted: #55556E;
   --color-ink-faded: #8888A0;
 
-  /* Accent — Helm Violet (darkened for light bg contrast) */
+  /* Accent — Komma Violet (darkened for light bg contrast) */
   --color-accent: #7C6BEB;
   --color-accent-hover: #6B59DE;
   --color-accent-light: #F0EDFF;
@@ -66,7 +66,7 @@
   --color-ink-muted: #8C8C96;
   --color-ink-faded: #5C5C66;
 
-  /* Accent — Helm Violet (restrained, only on interactive) */
+  /* Accent — Komma Violet (restrained, only on interactive) */
   --color-accent: #8B7BF5;
   --color-accent-hover: #A496FF;
   --color-accent-light: #25223A;

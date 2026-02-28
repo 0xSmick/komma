@@ -21,6 +21,11 @@ interface HeaderProps {
   onOpenSettings?: () => void;
   onPullChanges?: () => void;
   shareMessage?: string | null;
+  githubSyncEnabled?: boolean;
+  githubPushStatus?: 'idle' | 'pushing' | 'done' | 'error';
+  githubPushError?: string | null;
+  onPushToGithub?: () => void;
+  onDismissGithubPush?: () => void;
 }
 
 export default function Header({
@@ -44,6 +49,11 @@ export default function Header({
   onOpenSettings,
   onPullChanges,
   shareMessage,
+  githubSyncEnabled,
+  githubPushStatus = 'idle',
+  githubPushError,
+  onPushToGithub,
+  onDismissGithubPush,
 }: HeaderProps) {
   return (
     <header
@@ -58,14 +68,14 @@ export default function Header({
           <div className="flex items-center gap-2.5">
             <img
               src={theme === 'dark' ? '/logo-dark.svg' : '/logo-light.svg'}
-              alt="Helm"
+              alt="Komma"
               className="w-7 h-7 rounded-md"
             />
             <h1
               className="text-sm font-semibold tracking-tight"
               style={{ color: 'var(--color-ink)', fontFamily: 'var(--font-sans)' }}
             >
-              Helm
+              Komma
             </h1>
           </div>
           <div className="flex items-center gap-1">
@@ -147,6 +157,26 @@ export default function Header({
             )}
             {shareStatus === 'sharing' ? 'Sharing...' : 'Share'}
           </button>
+          {githubSyncEnabled && onPushToGithub && (
+            <button
+              onClick={onPushToGithub}
+              disabled={githubPushStatus === 'pushing'}
+              className="btn btn-ghost text-sm"
+              title="Push to GitHub"
+            >
+              {githubPushStatus === 'pushing' ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                  <circle cx="12" cy="12" r="10" opacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+                </svg>
+              )}
+              {githubPushStatus === 'pushing' ? 'Pushing...' : 'Push'}
+            </button>
+          )}
           <button
             onClick={loadDocument}
             className="btn btn-ghost text-sm"
@@ -337,6 +367,65 @@ export default function Header({
           >
             ×
           </button>
+        </div>
+      )}
+
+      {/* GitHub push toast */}
+      {(githubPushStatus === 'done' || githubPushStatus === 'error') && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            marginTop: '8px',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 100,
+            background: githubPushStatus === 'done' ? 'var(--color-success)' : 'var(--color-danger, #ef4444)',
+            color: '#fff',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {githubPushStatus === 'done' ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span>Pushed to GitHub</span>
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+              <span>{githubPushError || 'Push failed'}</span>
+            </>
+          )}
+          {onDismissGithubPush && (
+            <button
+              onClick={onDismissGithubPush}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.7)',
+                cursor: 'pointer',
+                padding: '0 0 0 4px',
+                fontSize: '16px',
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          )}
         </div>
       )}
     </header>

@@ -8,7 +8,7 @@ import rehypeRaw from 'rehype-raw';
 import dynamic from 'next/dynamic';
 
 import { useDocument } from './hooks/useDocument';
-import { Comment } from './types';
+import { Comment, BrowserFile } from './types';
 import { useComments } from './hooks/useComments';
 import { useChangelog } from './hooks/useChangelog';
 import { useClaude } from './hooks/useClaude';
@@ -33,6 +33,7 @@ import { computeChunkedDiff } from '../lib/diff';
 import type { DiffChunk } from '../lib/diff';
 import FileExplorer from './components/FileExplorer';
 import HtmlViewer from './components/HtmlViewer';
+import HtmlDiffView from './components/HtmlDiffView';
 import MultiAgentProgress from './components/MultiAgentProgress';
 
 const RichEditor = dynamic(() => import('./components/RichEditor'), { ssr: false });
@@ -68,6 +69,8 @@ export default function Home() {
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showFileExplorer, setShowFileExplorer] = useState(false);
+  const [explorerWidth, setExplorerWidth] = useState(240);
+  const explorerResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const [showAgentTab, setShowAgentTab] = useState(true);
   const [vaultRoot, setVaultRoot] = useState<string | null>(null);
   const [showSavedFlash, setShowSavedFlash] = useState(false);
@@ -75,9 +78,10 @@ export default function Home() {
   const [settingsVaultRoot, setSettingsVaultRoot] = useState('');
 
   // History tab state
-  const [historyCommits, setHistoryCommits] = useState<Array<{ hash: string; shortHash: string; message: string; date: string; author: string }>>([]);
+  type Snapshot = { id: number; source: 'save' | 'claude_edit' | 'restore'; created_at: string };
+  const [historySnapshots, setHistorySnapshots] = useState<Snapshot[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historySelectedCommit, setHistorySelectedCommit] = useState<{ hash: string; shortHash: string; message: string; date: string; author: string } | null>(null);
+  const [historySelectedSnapshot, setHistorySelectedSnapshot] = useState<Snapshot | null>(null);
   const [historyDiffChunks, setHistoryDiffChunks] = useState<DiffChunk[] | null>(null);
 
   // Google Docs share state
@@ -86,6 +90,13 @@ export default function Home() {
   const [shareError, setShareError] = useState<string | null>(null);
   const [existingDocInfo, setExistingDocInfo] = useState<{ url: string; title: string; updatedAt: string } | null>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
+
+  // GitHub push state
+  const [githubSyncEnabled, setGithubSyncEnabled] = useState(false);
+  const [githubPushStatus, setGithubPushStatus] = useState<'idle' | 'pushing' | 'done' | 'error'>('idle');
+  const [githubPushError, setGithubPushError] = useState<string | null>(null);
+  const [settingsGithubSync, setSettingsGithubSync] = useState(false);
+  const [settingsGithubRemote, setSettingsGithubRemote] = useState('');
 
   // Split pane state
   const [splitTabIndex, setSplitTabIndex] = useState<number | null>(null);
@@ -100,7 +111,7 @@ export default function Home() {
     return (hour >= 19 || hour < 7) ? 'dark' : 'light';
   });
   useEffect(() => {
-    const saved = localStorage.getItem('helm-theme') as 'light' | 'dark' | null;
+    const saved = localStorage.getItem('komma-theme') as 'light' | 'dark' | null;
     if (saved) {
       setTheme(saved);
       document.documentElement.setAttribute('data-theme', saved === 'dark' ? 'dark' : '');
@@ -111,7 +122,7 @@ export default function Home() {
   const toggleTheme = useCallback(() => {
     setTheme(prev => {
       const next = prev === 'light' ? 'dark' : 'light';
-      localStorage.setItem('helm-theme', next);
+      localStorage.setItem('komma-theme', next);
       document.documentElement.setAttribute('data-theme', next === 'dark' ? 'dark' : '');
       return next;
     });
@@ -209,6 +220,18 @@ export default function Home() {
       return () => clearTimeout(t);
     }
   }, [shareStatus]);
+
+  // Auto-dismiss GitHub push toast
+  useEffect(() => {
+    if (githubPushStatus === 'done') {
+      const t = setTimeout(() => { setGithubPushStatus('idle'); }, 8000);
+      return () => clearTimeout(t);
+    }
+    if (githubPushStatus === 'error') {
+      const t = setTimeout(() => { setGithubPushStatus('idle'); setGithubPushError(null); }, 5000);
+      return () => clearTimeout(t);
+    }
+  }, [githubPushStatus]);
 
   // When entering/exiting edit mode, restore scroll position from fraction saved before state change
   const prevEditMode = useRef(doc.isEditMode);
@@ -513,6 +536,7 @@ export default function Home() {
     const resolveVault = async () => {
       try {
         const settings = await window.electronAPI?.settings.get();
+        if (settings?.githubAutoSync) setGithubSyncEnabled(true);
         if (settings?.vaultRoot) {
           setVaultRoot(settings.vaultRoot);
           return;
@@ -528,46 +552,75 @@ export default function Home() {
     resolveVault();
   }, [doc.filePath]);
 
-  // Load git history when History tab activates or file changes while on History tab
+  // Load snapshot history when History tab activates or file changes while on History tab
   useEffect(() => {
     if (activeTab !== 'history' || !doc.filePath) return;
     const loadHistory = async () => {
-      if (!window.electronAPI?.git?.log) return;
       setHistoryLoading(true);
-      setHistorySelectedCommit(null);
+      setHistorySelectedSnapshot(null);
       setHistoryDiffChunks(null);
       try {
-        const result = await window.electronAPI.git.log(doc.filePath);
-        if (result.success && result.commits) {
-          setHistoryCommits(result.commits);
-        } else {
-          setHistoryCommits([]);
-        }
+        const res = await fetch(`/api/snapshots?document_path=${encodeURIComponent(doc.filePath)}`);
+        const data = await res.json();
+        setHistorySnapshots(data.snapshots || []);
       } catch {
-        setHistoryCommits([]);
+        setHistorySnapshots([]);
       }
       setHistoryLoading(false);
     };
     loadHistory();
   }, [activeTab, doc.filePath]);
 
-  const handleSelectHistoryCommit = useCallback(async (commit: { hash: string; shortHash: string; message: string; date: string; author: string }) => {
-    setHistorySelectedCommit(commit);
+  const handleSelectSnapshot = useCallback(async (snapshot: Snapshot) => {
+    setHistorySelectedSnapshot(snapshot);
     setHistoryDiffChunks(null);
-    if (!window.electronAPI?.git?.show) return;
     try {
-      const [current, parent] = await Promise.all([
-        window.electronAPI.git.show(doc.filePath, commit.hash),
-        window.electronAPI.git.show(doc.filePath, commit.hash + '~1'),
+      const [current, prev] = await Promise.all([
+        fetch(`/api/snapshots?id=${snapshot.id}`).then(r => r.json()),
+        fetch(`/api/snapshots?id=${snapshot.id}&previous=true`).then(r => r.json()),
       ]);
-      const currentContent = current.success ? current.content! : '';
-      const parentContent = parent.success ? parent.content! : '';
-      const chunks = computeChunkedDiff(parentContent, currentContent);
+      const chunks = computeChunkedDiff(prev.content || '', current.content);
       setHistoryDiffChunks(chunks);
     } catch {
       setHistoryDiffChunks([]);
     }
-  }, [doc.filePath]);
+  }, []);
+
+  const handleRestoreSnapshot = useCallback(async (snapshot: Snapshot) => {
+    if (!doc.filePath) return;
+    try {
+      // Fetch the snapshot content to restore
+      const res = await fetch(`/api/snapshots?id=${snapshot.id}`);
+      const data = await res.json();
+      if (!data.content) return;
+
+      // Create a 'restore' snapshot of current content first (so user can undo)
+      await fetch('/api/snapshots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_path: doc.filePath, content: doc.markdown, source: 'restore' }),
+      });
+
+      // Save the restored content to disk
+      await fetch('/api/file', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: doc.filePath, content: data.content }),
+      });
+
+      // Reload the document and history
+      doc.loadDocument();
+      setHistorySelectedSnapshot(null);
+      setHistoryDiffChunks(null);
+
+      // Refresh snapshot list
+      const histRes = await fetch(`/api/snapshots?document_path=${encodeURIComponent(doc.filePath)}`);
+      const histData = await histRes.json();
+      setHistorySnapshots(histData.snapshots || []);
+    } catch (e) {
+      console.error('Failed to restore snapshot:', e);
+    }
+  }, [doc.filePath, doc.markdown, doc.loadDocument]);
 
   // Load chat sessions when document changes
   useEffect(() => {
@@ -688,9 +741,9 @@ export default function Home() {
       if (!container) return;
       const containerRect = container.getBoundingClientRect();
       // Account for file explorer width
-      const explorerWidth = showFileExplorer ? 240 : 0;
+      const expWidth = showFileExplorer ? explorerWidth : 0;
       const sidebarWidth = showAgentTab ? 380 : 0;
-      const availableWidth = containerRect.width - explorerWidth - sidebarWidth;
+      const availableWidth = containerRect.width - expWidth - sidebarWidth;
       const delta = e.clientX - resizeRef.current.startX;
       const newRatio = Math.max(0.25, Math.min(0.75, resizeRef.current.startRatio + delta / availableWidth));
       setSplitRatio(newRatio);
@@ -1045,7 +1098,7 @@ export default function Home() {
   const handleNavigateToComment = useCallback((comment: Comment) => {
     // For HTML files, navigate via iframe postMessage
     if (doc.isHtml && iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'helm-navigate', text: comment.selectedText }, '*');
+      iframeRef.current.contentWindow.postMessage({ type: 'komma-navigate', text: comment.selectedText }, '*');
       return;
     }
     const article = articleRef.current;
@@ -1202,7 +1255,7 @@ export default function Home() {
         return;
       }
 
-      // Create Helm comments for each pulled Google comment
+      // Create Komma comments for each pulled Google comment
       for (const c of result.comments) {
         await addComment(c.selectedText, c.comment);
       }
@@ -1221,6 +1274,25 @@ export default function Home() {
     }
   }, [doc.filePath, doc.markdown, addComment]);
 
+  const handlePushToGithub = useCallback(async () => {
+    const api = window.electronAPI;
+    if (!api?.git?.push) return;
+
+    setGithubPushStatus('pushing');
+    try {
+      const result = await api.git.push(doc.filePath);
+      if (result.success) {
+        setGithubPushStatus('done');
+      } else {
+        setGithubPushStatus('error');
+        setGithubPushError(result.error || 'Push failed');
+      }
+    } catch (err: any) {
+      setGithubPushStatus('error');
+      setGithubPushError(err.message || 'Push failed');
+    }
+  }, [doc.filePath]);
+
   const handleSelectFile = useCallback((path: string) => {
     setShowFileBrowser(false);
     const existingIdx = tabs.findIndex(t => t.path === path);
@@ -1235,6 +1307,79 @@ export default function Home() {
       });
     }
   }, [tabs]);
+
+  // File operations (rename, move, delete)
+  const [moveFilePath, setMoveFilePath] = useState<string | null>(null);
+  const [moveBrowserPath, setMoveBrowserPath] = useState('');
+  const [moveBrowserFiles, setMoveBrowserFiles] = useState<BrowserFile[]>([]);
+
+  const handleFileRename = useCallback(async (filePath: string, newName: string) => {
+    const api = window.electronAPI;
+    if (!api?.file?.rename) return;
+    const result = await api.file.rename(filePath, newName);
+    if (result.success && result.newPath) {
+      // Update any open tabs with this file
+      setTabs(prev => prev.map(t =>
+        t.path === filePath ? { path: result.newPath!, title: result.newPath!.split('/').pop() || t.title } : t
+      ));
+      // If this is the active file, reload it
+      if (doc.filePath === filePath) {
+        handleSelectFile(result.newPath);
+      }
+    }
+  }, [doc.filePath, handleSelectFile]);
+
+  const handleFileDelete = useCallback(async (filePath: string) => {
+    const api = window.electronAPI;
+    if (!api?.file?.delete) return;
+    const result = await api.file.delete(filePath);
+    if (result.success) {
+      // Close any tab with this file
+      const tabIdx = tabs.findIndex(t => t.path === filePath);
+      if (tabIdx >= 0) {
+        handleCloseTab(tabIdx);
+      }
+    }
+  }, [tabs, handleCloseTab]);
+
+  const handleFileMoveStart = useCallback((filePath: string) => {
+    setMoveFilePath(filePath);
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    setMoveBrowserPath(dir);
+    // Load directory contents
+    fetch(`/api/files?path=${encodeURIComponent(dir)}`)
+      .then(r => r.json())
+      .then(data => {
+        setMoveBrowserPath(data.path);
+        setMoveBrowserFiles(data.files?.filter((f: BrowserFile) => f.isDirectory) || []);
+      })
+      .catch(() => {});
+  }, []);
+
+  const loadMoveDirectory = useCallback(async (dirPath: string) => {
+    try {
+      const res = await fetch(`/api/files?path=${encodeURIComponent(dirPath)}`);
+      const data = await res.json();
+      setMoveBrowserPath(data.path);
+      setMoveBrowserFiles(data.files?.filter((f: BrowserFile) => f.isDirectory) || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleFileMove = useCallback(async (destDir: string) => {
+    if (!moveFilePath) return;
+    const api = window.electronAPI;
+    if (!api?.file?.move) return;
+    const result = await api.file.move(moveFilePath, destDir);
+    if (result.success && result.newPath) {
+      setTabs(prev => prev.map(t =>
+        t.path === moveFilePath ? { path: result.newPath!, title: result.newPath!.split('/').pop() || t.title } : t
+      ));
+      if (doc.filePath === moveFilePath) {
+        handleSelectFile(result.newPath);
+      }
+    }
+    setMoveFilePath(null);
+  }, [moveFilePath, doc.filePath, handleSelectFile]);
 
   const [isCreatingDoc, setIsCreatingDoc] = useState(false);
   const [multiAgentSections, setMultiAgentSections] = useState<Array<{ title: string; status: 'pending' | 'streaming' | 'complete' | 'error'; output: string }>>([]);
@@ -1269,18 +1414,22 @@ export default function Home() {
         setIsCreatingDoc(false);
         if (data.success) {
           // Verify the file actually got created before opening (retry to handle write flush delay)
-          for (let attempt = 0; attempt < 5; attempt++) {
+          for (let attempt = 0; attempt < 10; attempt++) {
             try {
               const check = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
               const checkData = await check.json();
-              if (checkData.content) {
+              if (checkData.content !== undefined && checkData.content !== '') {
                 handleSelectFile(filePath);
                 return;
               }
             } catch { /* file not ready yet */ }
             await new Promise(r => setTimeout(r, 500));
           }
-          console.error('New document file was empty after generation');
+          // File might exist but be empty — still open it so user can see something
+          handleSelectFile(filePath);
+          console.warn('New document file was empty or missing after generation — opening anyway');
+        } else {
+          console.error('New document creation failed:', data.error);
         }
       });
       await api.claude.sendEdit(
@@ -1292,6 +1441,20 @@ export default function Home() {
       setIsCreatingDoc(false);
     }
   }, [handleSelectFile, claude.model]);
+
+  const handleCreateBlank = useCallback(async (filePath: string) => {
+    setShowNewDocModal(false);
+    try {
+      await fetch('/api/file', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: filePath, content: '' }),
+      });
+      handleSelectFile(filePath);
+    } catch (err) {
+      console.error('Failed to create blank document:', err);
+    }
+  }, [handleSelectFile]);
 
   // Navigate to a related document by name (resolves to sibling .md file)
   const navigateToDocument = useCallback((docName: string) => {
@@ -1473,10 +1636,17 @@ export default function Home() {
         onPullChanges={handlePullChanges}
         shareMessage={shareMessage}
         onDismissShare={() => { setShareStatus('idle'); setShareUrl(null); setShareError(null); setExistingDocInfo(null); setShareMessage(null); }}
+        githubSyncEnabled={githubSyncEnabled}
+        githubPushStatus={githubPushStatus}
+        githubPushError={githubPushError}
+        onPushToGithub={handlePushToGithub}
+        onDismissGithubPush={() => { setGithubPushStatus('idle'); setGithubPushError(null); }}
         onOpenSettings={async () => {
           try {
             const settings = await window.electronAPI?.settings.get();
             setSettingsVaultRoot(settings?.vaultRoot || '');
+            setSettingsGithubSync(!!settings?.githubAutoSync);
+            setSettingsGithubRemote(settings?.githubRemote || '');
           } catch { setSettingsVaultRoot(''); }
           setShowSettings(true);
         }}
@@ -1516,18 +1686,58 @@ export default function Home() {
         {showFileExplorer && (
           <div
             style={{
-              width: '240px',
+              width: `${explorerWidth}px`,
               flexShrink: 0,
-              borderRight: '1px solid var(--color-border)',
               background: 'var(--color-paper-dark)',
               overflowY: 'auto',
+              position: 'relative',
+              display: 'flex',
             }}
           >
             <FileExplorer
               show={showFileExplorer}
-              currentDir={doc.filePath.substring(0, doc.filePath.lastIndexOf('/'))}
+              currentDir={vaultRoot || doc.filePath.substring(0, doc.filePath.lastIndexOf('/'))}
               currentFile={doc.filePath}
               onSelectFile={handleSelectFile}
+              onRenameFile={handleFileRename}
+              onDeleteFile={handleFileDelete}
+              onMoveFile={handleFileMoveStart}
+            />
+            {/* Resize handle */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: '5px',
+                cursor: 'col-resize',
+                zIndex: 10,
+                background: 'transparent',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-accent-subtle)'; }}
+              onMouseLeave={(e) => { if (!explorerResizeRef.current) e.currentTarget.style.background = 'transparent'; }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                explorerResizeRef.current = { startX: e.clientX, startWidth: explorerWidth };
+                const handle = e.currentTarget;
+                handle.style.background = 'var(--color-accent)';
+
+                const onMove = (ev: MouseEvent) => {
+                  if (!explorerResizeRef.current) return;
+                  const delta = ev.clientX - explorerResizeRef.current.startX;
+                  const newWidth = Math.max(160, Math.min(600, explorerResizeRef.current.startWidth + delta));
+                  setExplorerWidth(newWidth);
+                };
+                const onUp = () => {
+                  explorerResizeRef.current = null;
+                  handle.style.background = 'transparent';
+                  document.removeEventListener('mousemove', onMove);
+                  document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+              }}
             />
           </div>
         )}
@@ -1591,7 +1801,7 @@ export default function Home() {
                 <polyline points="10 9 9 9 8 9" />
               </svg>
               <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-ink)', marginBottom: '4px' }}>
-                Helm
+                Komma
               </div>
               <div style={{ fontSize: '13px', marginBottom: '24px' }}>
                 Open a file to get started
@@ -1695,23 +1905,38 @@ export default function Home() {
               Loading document...
             </div>
           ) : doc.isHtml ? (
-            <div style={{ height: 'calc(100vh - 160px)', width: '100%' }}>
-              <HtmlViewer
-                htmlContent={doc.markdown}
-                filePath={doc.filePath}
-                comments={comments}
-                iframeRef={iframeRef}
-                onSelectionChange={(sel) => {
-                  if (sel && sel.text) {
-                    setSelectedText(sel.text);
-                    setTooltipPosition(sel.position);
-                    setShowMiniTooltip(true);
-                  } else {
-                    setShowMiniTooltip(false);
-                  }
-                }}
-              />
-            </div>
+            claude.beforeMarkdown && claude.afterMarkdown ? (
+              <div style={{ height: 'calc(100vh - 160px)', width: '100%' }}>
+                <HtmlDiffView
+                  beforeHtml={claude.beforeMarkdown}
+                  afterHtml={claude.afterMarkdown}
+                  filePath={doc.filePath}
+                  onApprove={() => {
+                    claude.approveChanges();
+                    comments.filter(c => c.status === 'applied').forEach(c => removeComment(c.id));
+                  }}
+                  onReject={() => claude.rejectChanges()}
+                />
+              </div>
+            ) : (
+              <div style={{ height: 'calc(100vh - 160px)', width: '100%' }}>
+                <HtmlViewer
+                  htmlContent={doc.markdown}
+                  filePath={doc.filePath}
+                  comments={comments}
+                  iframeRef={iframeRef}
+                  onSelectionChange={(sel) => {
+                    if (sel && sel.text) {
+                      setSelectedText(sel.text);
+                      setTooltipPosition(sel.position);
+                      setShowMiniTooltip(true);
+                    } else {
+                      setShowMiniTooltip(false);
+                    }
+                  }}
+                />
+              </div>
+            )
           ) : (
             <>
               <DocumentInfo
@@ -1733,7 +1958,7 @@ export default function Home() {
                 />
               </div>
               <div style={{ display: doc.isEditMode ? 'none' : 'block' }}>
-                {historySelectedCommit && historyDiffChunks ? (
+                {historySelectedSnapshot && historyDiffChunks ? (
                   <div>
                     <div
                       className="flex items-center gap-3 mb-6 px-4 py-3 rounded-lg"
@@ -1743,7 +1968,7 @@ export default function Home() {
                       }}
                     >
                       <button
-                        onClick={() => { setHistorySelectedCommit(null); setHistoryDiffChunks(null); }}
+                        onClick={() => { setHistorySelectedSnapshot(null); setHistoryDiffChunks(null); }}
                         className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors flex-shrink-0"
                         style={{
                           color: 'var(--color-ink-faded)',
@@ -1756,16 +1981,16 @@ export default function Home() {
                       </button>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <span className="text-sm font-medium" style={{ color: 'var(--color-ink)' }}>
-                          {historySelectedCommit.message}
+                          {historySelectedSnapshot.source === 'claude_edit' ? 'Claude edit' : historySelectedSnapshot.source === 'restore' ? 'Restored' : 'Saved'}
                         </span>
                         <span className="text-xs ml-2" style={{ color: 'var(--color-ink-faded)' }}>
-                          {historySelectedCommit.shortHash}
+                          {new Date(historySelectedSnapshot.created_at + 'Z').toLocaleString()}
                         </span>
                       </div>
                     </div>
                     {historyDiffChunks.length === 0 ? (
                       <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--color-ink-faded)', fontSize: '14px' }}>
-                        No changes in this commit
+                        No changes in this version
                       </div>
                     ) : (
                       <InlineDiffView chunks={historyDiffChunks} readOnly />
@@ -1955,13 +2180,13 @@ export default function Home() {
             />
           ) : (
             <HistoryTab
-              commits={historyCommits}
+              snapshots={historySnapshots}
               isLoading={historyLoading}
-              selectedCommit={historySelectedCommit}
-              onSelectCommit={handleSelectHistoryCommit}
-              onBack={() => { setHistorySelectedCommit(null); setHistoryDiffChunks(null); }}
-              isElectron={!!window.electronAPI?.git}
-              isDiffLoading={!!historySelectedCommit && !historyDiffChunks}
+              selectedSnapshot={historySelectedSnapshot}
+              onSelectSnapshot={handleSelectSnapshot}
+              onRestore={handleRestoreSnapshot}
+              onBack={() => { setHistorySelectedSnapshot(null); setHistoryDiffChunks(null); }}
+              isDiffLoading={!!historySelectedSnapshot && !historyDiffChunks}
             />
           )}
         </Sidebar>}
@@ -1988,6 +2213,7 @@ export default function Home() {
         show={showNewDocModal}
         currentDir={vaultRoot || (doc.filePath ? doc.filePath.substring(0, doc.filePath.lastIndexOf('/')) : '')}
         onSubmit={handleNewDocument}
+        onCreateBlank={handleCreateBlank}
         onCancel={() => setShowNewDocModal(false)}
       />
 
@@ -1998,7 +2224,113 @@ export default function Home() {
         vaultRoot={vaultRoot}
         onSelectFile={handleSelectFile}
         onClose={() => setShowFileBrowser(false)}
+        onRenameFile={handleFileRename}
+        onDeleteFile={handleFileDelete}
+        onMoveFile={handleFileMoveStart}
       />
+
+      {/* Move to... dialog */}
+      {moveFilePath && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={() => setMoveFilePath(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--color-surface)',
+              borderRadius: '12px',
+              padding: '24px',
+              width: '480px',
+              maxWidth: '90vw',
+              maxHeight: '70vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              border: '1px solid var(--color-border)',
+              fontFamily: 'var(--font-sans)',
+            }}
+          >
+            <h2 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 600, color: 'var(--color-ink)' }}>Move file</h2>
+            <p style={{ margin: '0 0 12px', fontSize: '12px', color: 'var(--color-ink-faded)' }}>
+              Moving <strong>{moveFilePath.split('/').pop()}</strong>
+            </p>
+            {/* Current path + up button */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <button
+                onClick={() => {
+                  const parent = moveBrowserPath.substring(0, moveBrowserPath.lastIndexOf('/')) || '/';
+                  loadMoveDirectory(parent);
+                }}
+                style={{
+                  background: 'none', border: '1px solid var(--color-border)', borderRadius: '4px',
+                  cursor: 'pointer', padding: '4px 6px', display: 'flex', alignItems: 'center',
+                  color: 'var(--color-ink-muted)',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </button>
+              <span style={{ fontSize: '12px', color: 'var(--color-ink-muted)', fontFamily: 'var(--font-mono, monospace)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {moveBrowserPath}
+              </span>
+            </div>
+            {/* Folder list */}
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '6px', marginBottom: '16px' }}>
+              {moveBrowserFiles.length === 0 ? (
+                <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: 'var(--color-ink-faded)' }}>
+                  No subfolders
+                </div>
+              ) : (
+                moveBrowserFiles.map(f => (
+                  <div
+                    key={f.path}
+                    onClick={() => loadMoveDirectory(f.path)}
+                    style={{
+                      padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+                      fontSize: '13px', color: 'var(--color-ink)', borderBottom: '1px solid var(--color-border)',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-accent-subtle)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-amber)" strokeWidth="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                    {f.name}
+                  </div>
+                ))
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setMoveFilePath(null)}
+                style={{
+                  padding: '8px 16px', fontSize: '13px', borderRadius: '6px',
+                  border: '1px solid var(--color-border)', background: 'var(--color-surface-raised)',
+                  color: 'var(--color-ink)', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleFileMove(moveBrowserPath)}
+                style={{
+                  padding: '8px 16px', fontSize: '13px', borderRadius: '6px',
+                  border: 'none', background: 'var(--color-accent)',
+                  color: '#fff', cursor: 'pointer', fontWeight: 500,
+                }}
+              >
+                Move here
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Settings modal */}
       {showSettings && (
@@ -2066,6 +2398,46 @@ export default function Home() {
                 Browse
               </button>
             </div>
+            {/* GitHub Sync */}
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginBottom: '20px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-ink)', marginBottom: '6px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={settingsGithubSync}
+                  onChange={(e) => setSettingsGithubSync(e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--color-accent)' }}
+                />
+                Push to GitHub
+              </label>
+              <p style={{ fontSize: '12px', color: 'var(--color-ink-faded)', margin: '0 0 8px' }}>
+                Show a &ldquo;Push&rdquo; button in the header to commit and push to the vault&apos;s git remote.
+              </p>
+              {settingsGithubSync && (
+                <>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-ink)', marginBottom: '4px' }}>
+                    Remote override (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={settingsGithubRemote}
+                    onChange={(e) => setSettingsGithubRemote(e.target.value)}
+                    placeholder="origin"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      fontSize: '13px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--color-border)',
+                      background: 'var(--color-paper)',
+                      color: 'var(--color-ink)',
+                      outline: 'none',
+                      fontFamily: 'var(--font-mono, monospace)',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowSettings(false)}
@@ -2094,6 +2466,13 @@ export default function Home() {
                       const root = await window.electronAPI?.vault.resolveRoot(doc.filePath);
                       setVaultRoot(root ?? null);
                     } catch { setVaultRoot(null); }
+                  }
+                  await window.electronAPI?.settings.set('githubAutoSync', settingsGithubSync);
+                  setGithubSyncEnabled(settingsGithubSync);
+                  if (settingsGithubSync && settingsGithubRemote.trim()) {
+                    await window.electronAPI?.settings.set('githubRemote', settingsGithubRemote.trim());
+                  } else {
+                    await window.electronAPI?.settings.set('githubRemote', '');
                   }
                   setShowSettings(false);
                 }}
@@ -2155,7 +2534,7 @@ export default function Home() {
             </>
           ) : (
             <span style={{ opacity: 0.5 }}>
-              {doc.isEditMode ? 'Cmd+E to exit edit' : 'Cmd+E to edit'}
+              {doc.isHtml ? 'HTML (read-only)' : doc.isEditMode ? 'Cmd+E to exit edit' : 'Cmd+E to edit'}
             </span>
           )}
         </div>
@@ -2215,7 +2594,7 @@ export default function Home() {
               boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
             }}
           >
-            Drop .md file to open
+            Drop file to open
           </div>
         </div>
       )}

@@ -163,8 +163,8 @@ export default function Sidebar({
         })}
       </div>
 
-      {/* Tab Content */}
-      <div className={`flex-1 min-h-0 px-3 py-3 ${activeTab === 'chat' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
+      {/* Tab Content — pb-8 accounts for the fixed status bar (24px) */}
+      <div className={`flex-1 min-h-0 px-3 pt-3 pb-8 ${activeTab === 'chat' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
         {children}
       </div>
     </aside>

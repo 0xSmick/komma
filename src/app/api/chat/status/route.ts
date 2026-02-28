@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'fs';
 
-const CHAT_RESPONSE_FILE = '/tmp/helm-chat-response.json';
+const CHAT_RESPONSE_FILE = '/tmp/komma-chat-response.json';
 
 // GET: Read the chat response status file
 export async function GET() {

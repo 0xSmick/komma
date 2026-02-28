@@ -5,21 +5,21 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Google OAuth credentials — loaded from env vars or ~/.helm/google-oauth.json
+// Google OAuth credentials — loaded from env vars or ~/.komma/google-oauth.json
 // See SETUP.md for how to obtain your own credentials
 let _googleCreds: { clientId: string; clientSecret: string } | null = null;
 function getGoogleCreds() {
   if (_googleCreds) return _googleCreds;
   // 1. Environment variables
-  const envId = process.env.HELM_GOOGLE_CLIENT_ID;
-  const envSecret = process.env.HELM_GOOGLE_CLIENT_SECRET;
+  const envId = process.env.KOMMA_GOOGLE_CLIENT_ID;
+  const envSecret = process.env.KOMMA_GOOGLE_CLIENT_SECRET;
   if (envId && envSecret) {
     _googleCreds = { clientId: envId, clientSecret: envSecret };
     return _googleCreds;
   }
-  // 2. Config file at ~/.helm/google-oauth.json
+  // 2. Config file at ~/.komma/google-oauth.json
   try {
-    const configPath = path.join(require('os').homedir(), '.helm', 'google-oauth.json');
+    const configPath = path.join(require('os').homedir(), '.komma', 'google-oauth.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     if (config.clientId && config.clientSecret) {
       _googleCreds = { clientId: config.clientId, clientSecret: config.clientSecret };
@@ -234,7 +234,7 @@ export function startOAuthFlow(): Promise<TokenData> {
       }
 
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end('<html><body><h2>Authorized!</h2><p>You can close this window and return to Helm.</p></body></html>');
+      res.end('<html><body><h2>Authorized!</h2><p>You can close this window and return to Komma.</p></body></html>');
 
       try {
         const tokens = await exchangeCodeForTokens(code, codeVerifier);
@@ -348,7 +348,7 @@ export function getExistingDoc(localPath: string): DocMapEntry | null {
 export async function uploadHtmlAsGoogleDoc(html: string, title: string, localPath?: string): Promise<string> {
   const accessToken = await getValidToken();
 
-  const boundary = `helm_boundary_${crypto.randomBytes(16).toString('hex')}`;
+  const boundary = `komma_boundary_${crypto.randomBytes(16).toString('hex')}`;
   const metadata = JSON.stringify({
     name: title,
     mimeType: 'application/vnd.google-apps.document',
@@ -394,7 +394,7 @@ export async function uploadHtmlAsGoogleDoc(html: string, title: string, localPa
 export async function updateGoogleDoc(docId: string, html: string, title: string, localPath?: string): Promise<string> {
   const accessToken = await getValidToken();
 
-  const boundary = `helm_boundary_${crypto.randomBytes(16).toString('hex')}`;
+  const boundary = `komma_boundary_${crypto.randomBytes(16).toString('hex')}`;
   const metadata = JSON.stringify({ name: title });
 
   const bodyParts = [

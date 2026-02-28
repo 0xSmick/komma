@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 interface ChatSession {
   id: number;
@@ -29,6 +29,22 @@ export function useChat(documentPath: string, model?: string, onProposal?: (orig
   const [isStreaming, setIsStreaming] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
   const chatActiveRef = useRef(false);
+  const chatCleanupRef = useRef<{ stream: (() => void) | null; complete: (() => void) | null }>({ stream: null, complete: null });
+
+  const cleanupChatListeners = useCallback(() => {
+    chatCleanupRef.current.stream?.();
+    chatCleanupRef.current.complete?.();
+    chatCleanupRef.current = { stream: null, complete: null };
+  }, []);
+
+  // Clean up IPC listeners on unmount (prevents ghost listeners during HMR)
+  useEffect(() => {
+    return () => {
+      chatCleanupRef.current.stream?.();
+      chatCleanupRef.current.complete?.();
+      chatCleanupRef.current = { stream: null, complete: null };
+    };
+  }, []);
 
   const loadSessions = useCallback(async (docPath: string) => {
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -142,6 +158,9 @@ export function useChat(documentPath: string, model?: string, onProposal?: (orig
         // Build history from current messages for context
         const history = messages.map(m => ({ role: m.role, content: m.content }));
 
+        // Clean up any stale listeners from previous cancelled/failed chats
+        cleanupChatListeners();
+
         chatActiveRef.current = true;
 
         const cleanupStream = api.claude.onStream((streamData) => {
@@ -154,42 +173,58 @@ export function useChat(documentPath: string, model?: string, onProposal?: (orig
         });
 
         const cleanupComplete = api.claude.onComplete(async (completeData) => {
-          if (completeData.type === 'chat' && chatActiveRef.current) {
-            chatActiveRef.current = false;
-            cleanupStream();
-            cleanupComplete();
+          if (completeData.type !== 'chat') return;
 
-            if (completeData.success && completeData.content) {
-              // Save assistant response to DB
-              await fetch('/api/chat', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ session_id: sessionId, content: completeData.content }),
-              });
+          // Always clean up listeners and reset state
+          cleanupStream();
+          cleanupComplete();
+          chatCleanupRef.current = { stream: null, complete: null };
 
-              setMessages(prev => [...prev, {
-                id: Date.now(),
-                session_id: sessionId,
-                role: 'assistant' as const,
-                content: completeData.content!,
-                context_selection: null,
-                created_at: new Date().toISOString(),
-              }]);
-            } else {
-              setMessages(prev => [...prev, {
-                id: Date.now(),
-                session_id: sessionId,
-                role: 'assistant' as const,
-                content: `Error: ${completeData.error || 'Failed to get response'}`,
-                context_selection: null,
-                created_at: new Date().toISOString(),
-              }]);
-            }
-
+          if (!chatActiveRef.current) {
             setIsStreaming(false);
             setStreamOutput('');
+            return;
           }
+
+          chatActiveRef.current = false;
+
+          if (completeData.success && completeData.content) {
+            // Save assistant response to DB
+            await fetch('/api/chat', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ session_id: sessionId, content: completeData.content }),
+            });
+
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              session_id: sessionId,
+              role: 'assistant' as const,
+              content: completeData.content!,
+              context_selection: null,
+              created_at: new Date().toISOString(),
+            }]);
+
+            // If Claude made edits, send proposal for approval
+            if (completeData.proposal) {
+              onProposal?.(completeData.proposal.originalContent, completeData.proposal.proposedContent);
+            }
+          } else {
+            setMessages(prev => [...prev, {
+              id: Date.now(),
+              session_id: sessionId,
+              role: 'assistant' as const,
+              content: `Error: ${completeData.error || 'Failed to get response'}`,
+              context_selection: null,
+              created_at: new Date().toISOString(),
+            }]);
+          }
+
+          setIsStreaming(false);
+          setStreamOutput('');
         });
+
+        chatCleanupRef.current = { stream: cleanupStream, complete: cleanupComplete };
 
         await api.claude.sendChat(
           message,
@@ -291,10 +326,11 @@ export function useChat(documentPath: string, model?: string, onProposal?: (orig
     if (api) {
       await api.claude.cancel();
     }
+    cleanupChatListeners();
     chatActiveRef.current = false;
     setIsStreaming(false);
     setStreamOutput('');
-  }, []);
+  }, [cleanupChatListeners]);
 
   const restoreState = useCallback((sessionId: number | null, msgs: ChatMessage[], sess: ChatSession[]) => {
     setActiveSessionId(sessionId);

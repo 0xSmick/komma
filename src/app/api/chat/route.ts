@@ -4,8 +4,8 @@ import { getDb } from '@/lib/db';
 import { getOrCreateDocument } from '@/lib/documents';
 import type { ChatSession, ChatMessage } from '@/lib/types';
 
-const CHAT_FILE = '/tmp/helm-chat.json';
-const CHAT_RESPONSE_FILE = '/tmp/helm-chat-response.json';
+const CHAT_FILE = '/tmp/komma-chat.json';
+const CHAT_RESPONSE_FILE = '/tmp/komma-chat-response.json';
 
 // GET: Fetch chat sessions for a document, or messages for a session
 export async function GET(request: NextRequest) {

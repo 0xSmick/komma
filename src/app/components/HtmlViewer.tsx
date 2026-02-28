@@ -19,18 +19,18 @@ document.addEventListener('mouseup', () => {
     const range = sel.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     window.parent.postMessage({
-      type: 'helm-selection',
+      type: 'komma-selection',
       text,
       position: { x: rect.left + rect.width / 2, y: rect.top }
     }, '*');
   } else {
-    window.parent.postMessage({ type: 'helm-selection', text: '', position: null }, '*');
+    window.parent.postMessage({ type: 'komma-selection', text: '', position: null }, '*');
   }
 });
 
 window.addEventListener('message', (e) => {
-  if (e.data?.type === 'helm-highlight') {
-    document.querySelectorAll('mark.helm-comment-highlight').forEach(m => {
+  if (e.data?.type === 'komma-highlight') {
+    document.querySelectorAll('mark.komma-comment-highlight').forEach(m => {
       const parent = m.parentNode;
       if (parent) {
         parent.replaceChild(document.createTextNode(m.textContent || ''), m);
@@ -41,8 +41,8 @@ window.addEventListener('message', (e) => {
       highlightText(text);
     }
   }
-  if (e.data?.type === 'helm-navigate') {
-    const mark = document.querySelector('mark.helm-comment-highlight[data-text="' + CSS.escape(e.data.text) + '"]');
+  if (e.data?.type === 'komma-navigate') {
+    const mark = document.querySelector('mark.komma-comment-highlight[data-text="' + CSS.escape(e.data.text) + '"]');
     mark?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 });
@@ -57,7 +57,7 @@ function highlightText(text) {
       range.setStart(node, idx);
       range.setEnd(node, idx + text.length);
       const mark = document.createElement('mark');
-      mark.className = 'helm-comment-highlight';
+      mark.className = 'komma-comment-highlight';
       mark.dataset.text = text;
       mark.style.background = 'rgba(255, 200, 0, 0.3)';
       mark.style.borderBottom = '2px solid rgba(255, 200, 0, 0.6)';
@@ -68,7 +68,7 @@ function highlightText(text) {
 }
 </script>`;
 
-function buildSrcdoc(htmlContent: string, filePath: string): string {
+export function buildSrcdoc(htmlContent: string, filePath: string): string {
   if (!htmlContent) return '';
 
   const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
@@ -106,7 +106,7 @@ export default function HtmlViewer({
   // Listen for selection messages from iframe
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
-      if (e.data?.type !== 'helm-selection') return;
+      if (e.data?.type !== 'komma-selection') return;
 
       if (!e.data.text) {
         onSelectionChange(null);
@@ -139,7 +139,7 @@ export default function HtmlViewer({
       .map((c) => c.selectedText)
       .filter(Boolean);
 
-    iframe.contentWindow.postMessage({ type: 'helm-highlight', texts }, '*');
+    iframe.contentWindow.postMessage({ type: 'komma-highlight', texts }, '*');
   }, [comments, iframeRef]);
 
   const srcdoc = React.useMemo(

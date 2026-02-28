@@ -21,6 +21,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dialog: {
     openDirectory: () => ipcRenderer.invoke('dialog:open-directory'),
   },
+  file: {
+    rename(filePath: string, newName: string): Promise<{ success: boolean; newPath?: string; error?: string }> {
+      return ipcRenderer.invoke('file:rename', filePath, newName);
+    },
+    move(filePath: string, destDir: string): Promise<{ success: boolean; newPath?: string; error?: string }> {
+      return ipcRenderer.invoke('file:move', filePath, destDir);
+    },
+    delete(filePath: string): Promise<{ success: boolean; error?: string }> {
+      return ipcRenderer.invoke('file:delete', filePath);
+    },
+  },
   vault: {
     resolveRoot(fromPath: string): Promise<string | null> {
       return ipcRenderer.invoke('vault:resolve-root', fromPath);
@@ -61,6 +72,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     show(filePath: string, sha: string): Promise<{ success: boolean; content?: string; error?: string }> {
       return ipcRenderer.invoke('git:show', filePath, sha);
+    },
+    push(filePath: string, message?: string): Promise<{ success: boolean; error?: string; sha?: string; remote?: string; branch?: string }> {
+      return ipcRenderer.invoke('git:push', filePath, message);
+    },
+    remoteInfo(filePath: string): Promise<{ success: boolean; remoteUrl?: string | null; remoteName?: string | null; branch?: string | null; error?: string }> {
+      return ipcRenderer.invoke('git:remote-info', filePath);
     },
   },
   claude: {

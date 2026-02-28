@@ -1,6 +1,16 @@
-# Helm — Local Setup Guide
+# Komma — Setup Guide
 
-## Prerequisites
+## Install with Homebrew (recommended)
+
+```bash
+brew install --cask komma-app/komma/komma
+```
+
+Then install the Claude CLI (see below) for AI features.
+
+## Install from Source
+
+### Prerequisites
 
 | Requirement | Why | Check |
 |------------|-----|-------|
@@ -12,7 +22,7 @@
 
 ### Installing Claude CLI
 
-Helm uses the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) to power AI edits and chat. It runs via your personal Claude Max subscription — no API key needed.
+Komma uses the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) to power AI edits and chat. It runs via your personal Claude Max subscription — no API key needed.
 
 ```bash
 # Install Claude CLI
@@ -25,14 +35,14 @@ claude --version
 claude
 ```
 
-The CLI should be at `~/.local/bin/claude`, `/usr/local/bin/claude`, or `/opt/homebrew/bin/claude`. Helm's Electron main process searches these paths automatically.
+The CLI should be at `~/.local/bin/claude`, `/usr/local/bin/claude`, or `/opt/homebrew/bin/claude`. Komma's Electron main process searches these paths automatically.
 
 ## Setup
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/0xSmick/helm.git
-cd helm
+git clone https://github.com/komma-app/komma.git
+cd komma
 
 # 2. Install dependencies (includes native module compilation)
 npm install
@@ -45,7 +55,7 @@ That's it. The Electron app compiles TypeScript, starts a Next.js dev server on 
 
 ## How It Works
 
-Helm is an **Electron + Next.js** app for editing markdown documents with AI assistance.
+Komma is an **Electron + Next.js** app for editing markdown documents with AI assistance.
 
 ```
 electron/main.ts     → Electron main process (IPC handlers, Claude spawning, git ops)
@@ -53,7 +63,7 @@ electron/preload.ts  → Context bridge (renderer ↔ main process)
 electron/claude.ts   → Spawns `claude -p` CLI, parses NDJSON stream
 src/app/page.tsx     → Main React page (sidebar, editor, diff viewer)
 src/lib/db.ts        → SQLite database for comments, changelogs, chat sessions
-data/helm.db         → SQLite database file (created on first run)
+data/komma.db        → SQLite database file (created on first run)
 ```
 
 ### Key features
@@ -74,7 +84,7 @@ To use `@vault` references, either:
 1. Place a `.vault` marker file at the root of your documents directory, **or**
 2. Set it in the app: click the gear icon → Settings → Vault Root
 
-Config is stored at `~/.helm/config.json`.
+Config is stored at `~/.komma/config.json`.
 
 ### Google Docs integration (optional)
 
@@ -132,8 +142,8 @@ node scripts/patch-electron.js
 
 To open `.md` files from Finder by double-clicking:
 
-1. An AppleScript wrapper lives at `scripts/Helm.applescript`
-2. It gets installed to `~/Applications/Helm.app`
-3. Right-click a `.md` file → Open With → Helm → "Always Open With"
+1. An AppleScript wrapper lives at `scripts/Komma.applescript`
+2. It gets installed to `~/Applications/Komma.app`
+3. Right-click a `.md` file → Open With → Komma → "Always Open With"
 
 This is optional — you can always open files from within the app using Cmd+O or Cmd+P.

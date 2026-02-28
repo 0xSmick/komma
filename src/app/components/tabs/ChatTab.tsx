@@ -242,7 +242,7 @@ export default function ChatTab({
 
       {/* Messages area */}
       <div
-        className={`overflow-y-auto mb-3 ${messages.length === 0 && !isStreaming ? 'flex items-center justify-center py-8' : 'flex-1 space-y-3'}`}
+        className={`overflow-y-auto mb-3 flex-1 ${messages.length === 0 && !isStreaming ? 'flex items-center justify-center' : 'space-y-3'}`}
         style={{ minHeight: 0 }}
       >
         {messages.length === 0 && !isStreaming ? (

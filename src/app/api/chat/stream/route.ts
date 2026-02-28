@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 
-const STREAM_FILE = '/tmp/helm-chat-stream.log';
+const STREAM_FILE = '/tmp/komma-chat-stream.log';
 
 // GET: Read current chat stream content
 export async function GET() {

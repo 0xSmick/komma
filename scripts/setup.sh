@@ -78,7 +78,7 @@ fi
 # Check if we're in the project root
 if [ ! -f "package.json" ]; then
   echo ""
-  fail "Not in project root — run this script from the helm directory"
+  fail "Not in project root — run this script from the komma directory"
   exit 1
 fi
 

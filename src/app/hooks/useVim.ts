@@ -107,14 +107,14 @@ export function useVim({
 
   // --- localStorage persistence ---
   useEffect(() => {
-    const saved = localStorage.getItem('helm-vim-mode');
+    const saved = localStorage.getItem('komma-vim-mode');
     if (saved !== null) setEnabled(saved !== 'false');
   }, []);
 
   const toggleEnabled = useCallback(() => {
     setEnabled(prev => {
       const next = !prev;
-      localStorage.setItem('helm-vim-mode', String(next));
+      localStorage.setItem('komma-vim-mode', String(next));
       return next;
     });
   }, []);

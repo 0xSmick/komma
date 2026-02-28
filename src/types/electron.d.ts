@@ -27,6 +27,11 @@ declare global {
       dialog: {
         openDirectory(): Promise<string | null>;
       };
+      file: {
+        rename(filePath: string, newName: string): Promise<{ success: boolean; newPath?: string; error?: string }>;
+        move(filePath: string, destDir: string): Promise<{ success: boolean; newPath?: string; error?: string }>;
+        delete(filePath: string): Promise<{ success: boolean; error?: string }>;
+      };
       vault: {
         resolveRoot(fromPath: string): Promise<string | null>;
         getIndex(fromPath: string): Promise<{
@@ -49,6 +54,8 @@ declare global {
         commit(filePath: string, message: string): Promise<{ success: boolean; error?: string; sha?: string; skipped?: boolean; noChanges?: boolean }>;
         log(filePath: string, limit?: number): Promise<{ success: boolean; commits?: GitCommit[]; error?: string }>;
         show(filePath: string, sha: string): Promise<{ success: boolean; content?: string; error?: string }>;
+        push(filePath: string, message?: string): Promise<{ success: boolean; error?: string; sha?: string; remote?: string; branch?: string }>;
+        remoteInfo(filePath: string): Promise<{ success: boolean; remoteUrl?: string | null; remoteName?: string | null; branch?: string | null; error?: string }>;
       };
       claude: {
         sendEdit(prompt: string, filePath: string, model?: string, refs?: VaultRefs): Promise<void>;

@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Claude Watcher for Helm
+# Claude Watcher for Komma
 # This script watches for edit requests and streams Claude's thinking/output to the UI
 
-COMMENTS_FILE="/tmp/helm-comments.json"
-STATUS_FILE="/tmp/helm-status.json"
-STREAM_FILE="/tmp/helm-stream.log"
+COMMENTS_FILE="/tmp/komma-comments.json"
+STATUS_FILE="/tmp/komma-status.json"
+STREAM_FILE="/tmp/komma-stream.log"
 
-echo "🔍 Helm Claude Watcher"
+echo "🔍 Komma Claude Watcher"
 echo "   Watching: $COMMENTS_FILE"
 echo "   Streaming to: $STREAM_FILE"
 echo ""

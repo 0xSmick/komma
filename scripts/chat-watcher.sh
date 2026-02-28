@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# Chat Watcher for Helm
+# Chat Watcher for Komma
 # Watches for chat messages and runs Claude with document context for conversational replies
 
-CHAT_FILE="/tmp/helm-chat.json"
-RESPONSE_FILE="/tmp/helm-chat-response.json"
-STREAM_FILE="/tmp/helm-chat-stream.log"
+CHAT_FILE="/tmp/komma-chat.json"
+RESPONSE_FILE="/tmp/komma-chat-response.json"
+STREAM_FILE="/tmp/komma-chat-stream.log"
 
-echo "💬 Helm Chat Watcher"
+echo "💬 Komma Chat Watcher"
 echo "   Watching: $CHAT_FILE"
 echo "   Streaming to: $STREAM_FILE"
 echo ""

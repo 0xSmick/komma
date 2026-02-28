@@ -1,5 +1,5 @@
-appId: com.helm.app
-productName: Helm
+appId: com.komma.app
+productName: Komma
 directories:
   output: release
   buildResources: build

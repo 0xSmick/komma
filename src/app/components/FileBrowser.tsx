@@ -12,6 +12,9 @@ interface FileBrowserProps {
   vaultRoot?: string | null;
   onSelectFile: (path: string) => void;
   onClose: () => void;
+  onRenameFile?: (filePath: string, newName: string) => void;
+  onDeleteFile?: (filePath: string) => void;
+  onMoveFile?: (filePath: string) => void;
 }
 
 export default function FileBrowser({
@@ -21,6 +24,9 @@ export default function FileBrowser({
   vaultRoot,
   onSelectFile,
   onClose,
+  onRenameFile,
+  onDeleteFile,
+  onMoveFile,
 }: FileBrowserProps) {
   const [browserPath, setBrowserPath] = useState('');
   const [browserFiles, setBrowserFiles] = useState<BrowserFile[]>([]);
@@ -28,11 +34,53 @@ export default function FileBrowser({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: BrowserFile } | null>(null);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [confirmDeletePath, setConfirmDeletePath] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   const [searchResults, setSearchResults] = useState<BrowserFile[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRoot = vaultRoot || '';
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [contextMenu]);
+
+  // Focus rename input
+  useEffect(() => {
+    if (renamingPath && renameInputRef.current) {
+      renameInputRef.current.focus();
+      const name = renamingPath.split('/').pop() || '';
+      const dotIdx = name.lastIndexOf('.');
+      renameInputRef.current.setSelectionRange(0, dotIdx > 0 ? dotIdx : name.length);
+    }
+  }, [renamingPath]);
+
+  const handleRename = (filePath: string, newName: string) => {
+    if (!newName.trim()) { setRenamingPath(null); return; }
+    const oldName = filePath.split('/').pop() || '';
+    if (newName === oldName) { setRenamingPath(null); return; }
+    onRenameFile?.(filePath, newName);
+    setRenamingPath(null);
+    setTimeout(() => loadBrowserDirectory(browserPath), 200);
+  };
+
+  const handleDelete = (filePath: string) => {
+    onDeleteFile?.(filePath);
+    setConfirmDeletePath(null);
+    setTimeout(() => loadBrowserDirectory(browserPath), 200);
+  };
 
   const loadBrowserDirectory = useCallback(async (path: string) => {
     try {
@@ -266,21 +314,28 @@ export default function FileBrowser({
                 const canSelect = file.isDirectory || isOpenableFile;
                 const isSelected = index === selectedIndex;
 
+                const isRenamingThis = renamingPath === file.path;
+
                 return (
-                  <button
+                  <div
                     key={file.path}
                     data-file-item
-                    onClick={() => canSelect && selectFile(file.path, file.isDirectory)}
-                    disabled={!canSelect}
-                    className={`w-full px-5 py-3 flex items-center gap-3 text-left transition-colors ${
-                      !canSelect ? 'opacity-50 cursor-not-allowed' : ''
+                    className={`group w-full px-5 py-3 flex items-center gap-3 text-left transition-colors ${
+                      !canSelect ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                     }`}
                     style={{
                       background: isSelected ? 'var(--color-highlight)' : undefined,
                       borderLeft: isSelected ? '3px solid var(--color-accent)' : '3px solid transparent',
                     }}
+                    onClick={() => !isRenamingThis && canSelect && selectFile(file.path, file.isDirectory)}
                     onMouseEnter={e => { if (canSelect && !isSelected) e.currentTarget.style.background = 'var(--color-accent-subtle)'; }}
                     onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = ''; }}
+                    onContextMenu={(e) => {
+                      if (!file.isDirectory && isOpenableFile) {
+                        e.preventDefault();
+                        setContextMenu({ x: e.clientX, y: e.clientY, file });
+                      }
+                    }}
                   >
                     {file.isDirectory ? (
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-amber)" strokeWidth="2">
@@ -297,18 +352,69 @@ export default function FileBrowser({
                         <polyline points="14 2 14 8 20 8" />
                       </svg>
                     )}
-                    <span
-                      className="flex-1 truncate text-sm"
-                      style={{ color: canSelect ? 'var(--color-ink)' : 'var(--color-ink-faded)' }}
-                    >
-                      {file.name}
-                    </span>
+                    {isRenamingThis ? (
+                      <input
+                        ref={renameInputRef}
+                        defaultValue={file.name}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRename(file.path, (e.target as HTMLInputElement).value);
+                          else if (e.key === 'Escape') setRenamingPath(null);
+                        }}
+                        onBlur={(e) => handleRename(file.path, e.target.value)}
+                        className="flex-1 text-sm"
+                        style={{
+                          padding: '2px 6px', borderRadius: '4px',
+                          border: '1px solid var(--color-accent)',
+                          background: 'var(--color-paper)', color: 'var(--color-ink)',
+                          outline: 'none', fontFamily: 'inherit', minWidth: 0,
+                        }}
+                      />
+                    ) : (
+                      <span
+                        className="flex-1 truncate text-sm"
+                        style={{ color: canSelect ? 'var(--color-ink)' : 'var(--color-ink-faded)' }}
+                      >
+                        {file.name}
+                      </span>
+                    )}
                     {file.isDirectory && (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-ink-faded)" strokeWidth="2">
                         <path d="M9 18l6-6-6-6" />
                       </svg>
                     )}
-                  </button>
+                    {/* Hover action buttons */}
+                    {!file.isDirectory && isOpenableFile && !isRenamingThis && (
+                      <span className="hidden group-hover:flex gap-1 flex-shrink-0">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setRenamingPath(file.path); }}
+                          title="Rename"
+                          className="p-1 rounded transition-colors"
+                          style={{ color: 'var(--color-ink-faded)' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-ink)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-ink-faded)'; }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeletePath(file.path); }}
+                          title="Delete"
+                          className="p-1 rounded transition-colors"
+                          style={{ color: 'var(--color-ink-faded)' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-danger, #ef4444)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-ink-faded)'; }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      </span>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -335,6 +441,118 @@ export default function FileBrowser({
           </button>
         </div>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-[60] rounded-lg overflow-hidden"
+          style={{
+            top: contextMenu.y,
+            left: contextMenu.x,
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            minWidth: '160px',
+          }}
+        >
+          <button
+            className="w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2"
+            style={{ color: 'var(--color-ink)', fontFamily: 'var(--font-sans)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-accent-subtle)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            onClick={() => { setRenamingPath(contextMenu.file.path); setContextMenu(null); }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            Rename
+          </button>
+          {onMoveFile && (
+            <button
+              className="w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2"
+              style={{ color: 'var(--color-ink)', fontFamily: 'var(--font-sans)', borderTop: '1px solid var(--color-border)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-accent-subtle)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              onClick={() => { onMoveFile(contextMenu.file.path); setContextMenu(null); }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                <line x1="12" y1="11" x2="12" y2="17" />
+                <polyline points="9 14 12 11 15 14" />
+              </svg>
+              Move to...
+            </button>
+          )}
+          <button
+            className="w-full text-left px-3 py-2 text-xs transition-colors flex items-center gap-2"
+            style={{ color: 'var(--color-danger, #ef4444)', fontFamily: 'var(--font-sans)', borderTop: '1px solid var(--color-border)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-accent-subtle)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            onClick={() => { setConfirmDeletePath(contextMenu.file.path); setContextMenu(null); }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+            Delete
+          </button>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDeletePath && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={() => setConfirmDeletePath(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--color-surface)',
+              borderRadius: '12px',
+              padding: '20px 24px',
+              width: '380px',
+              maxWidth: '90vw',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+              border: '1px solid var(--color-border)',
+              fontFamily: 'var(--font-sans)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: '14px', fontWeight: 600, color: 'var(--color-ink)' }}>Delete file?</h3>
+            <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--color-ink-muted)' }}>
+              <strong>{confirmDeletePath.split('/').pop()}</strong> will be moved to the Trash.
+            </p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setConfirmDeletePath(null)}
+                style={{
+                  padding: '6px 14px', fontSize: '13px', borderRadius: '6px',
+                  border: '1px solid var(--color-border)', background: 'var(--color-surface-raised)',
+                  color: 'var(--color-ink)', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(confirmDeletePath)}
+                style={{
+                  padding: '6px 14px', fontSize: '13px', borderRadius: '6px',
+                  border: 'none', background: 'var(--color-danger, #ef4444)',
+                  color: '#fff', cursor: 'pointer', fontWeight: 500,
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

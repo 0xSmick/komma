@@ -9,7 +9,7 @@ import { spawnClaude } from './claude';
 import { uploadHtmlAsGoogleDoc, updateGoogleDoc, clearTokens, getExistingDoc, fetchDocComments, exportDocAsText, getPulledCommentIds, markCommentsPulled } from './google-auth';
 import { marked } from 'marked';
 
-const SETTINGS_PATH = path.join(os.homedir(), '.helm', 'config.json');
+const SETTINGS_PATH = path.join(os.homedir(), '.komma', 'config.json');
 
 function readSettings(): Record<string, any> {
   try {
@@ -23,6 +23,37 @@ function writeSettings(settings: Record<string, any>) {
   fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
 }
 
+/**
+ * Create a timestamped backup of a file before overwriting.
+ * Backups go to .backups/ sibling directory, kept for 30 days.
+ * Returns the backup path, or null if file didn't exist.
+ */
+function backupFile(filePath: string): string | null {
+  try {
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) return null;
+    const dir = path.dirname(filePath);
+    const name = path.basename(filePath, path.extname(filePath));
+    const ext = path.extname(filePath);
+    const backupDir = path.join(dir, '.backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupPath = path.join(backupDir, `${name}-${ts}${ext}`);
+    fs.copyFileSync(filePath, backupPath);
+    // Prune backups older than 30 days
+    try {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      for (const f of fs.readdirSync(backupDir)) {
+        const fp = path.join(backupDir, f);
+        if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+      }
+    } catch { /* pruning is best-effort */ }
+    return backupPath;
+  } catch (e) {
+    console.error('[backupFile] Failed to backup:', filePath, e);
+    return null;
+  }
+}
+
 let mainWindow: BrowserWindow | null = null;
 let nextServer: ChildProcess | null = null;
 let currentEdit: ReturnType<typeof spawnClaude> | null = null;
@@ -34,7 +65,9 @@ let accumulatedEditText = '';
 let accumulatedChatText = '';
 let currentChatProposalPath: string | null = null;
 let currentChatOriginalContent: string | null = null;
-let pendingOpenFile: string | null = process.env.HELM_OPEN_FILE || null;
+let currentEditProposalPath: string | null = null;
+let currentEditOriginalContent: string | null = null;
+let pendingOpenFile: string | null = process.env.KOMMA_OPEN_FILE || null;
 
 function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -138,7 +171,7 @@ async function startNextServer(port: number): Promise<void> {
 
 function createWindow(port: number) {
   mainWindow = new BrowserWindow({
-    title: 'Helm',
+    title: 'Komma',
     width: 1200,
     height: 800,
     icon: path.join(__dirname, '..', 'build', 'icon.iconset', 'icon_256x256.png'),
@@ -196,18 +229,24 @@ function scanVaultFiles(vaultRoot: string): Array<{ relativePath: string; firstL
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           walk(fullPath);
-        } else if (entry.name.endsWith('.md')) {
+        } else if (entry.name.endsWith('.md') || entry.name.endsWith('.html') || entry.name.endsWith('.htm')) {
           const relativePath = path.relative(vaultRoot, fullPath);
           let firstLine = '';
           try {
             const content = fs.readFileSync(fullPath, 'utf-8');
-            // Get first heading or first non-empty line
-            const lines = content.split('\n');
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed) {
-                firstLine = trimmed.replace(/^#+\s*/, '');
-                break;
+            if (entry.name.endsWith('.html') || entry.name.endsWith('.htm')) {
+              // Extract <title> for HTML files
+              const titleMatch = content.match(/<title[^>]*>(.*?)<\/title>/i);
+              if (titleMatch) firstLine = titleMatch[1].trim();
+            } else {
+              // Get first heading or first non-empty line for markdown
+              const lines = content.split('\n');
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed) {
+                  firstLine = trimmed.replace(/^#+\s*/, '');
+                  break;
+                }
               }
             }
           } catch { /* skip unreadable */ }
@@ -291,7 +330,9 @@ function registerIpcHandlers() {
       } catch {
         return { success: true, commits: [] };
       }
-      const relativePath = path.relative(repoRoot, filePath);
+      const realFilePath = fs.realpathSync(filePath);
+      const realRepoRoot = fs.realpathSync(repoRoot);
+      const relativePath = path.relative(realRepoRoot, realFilePath);
       const raw = await gitExec(
         ['-C', repoRoot, 'log', '--follow', '--format=%H%n%h%n%s%n%ai%n%an', `-n`, String(limit), '--', relativePath],
         repoRoot,
@@ -367,6 +408,145 @@ function registerIpcHandlers() {
     }
   });
 
+  ipcMain.handle('git:push', async (_event, filePath: string, message?: string) => {
+    try {
+      const dir = path.dirname(filePath);
+
+      // Find repo root — try vault root first, then git detection
+      let repoRoot: string;
+      const vRoot = resolveVaultRoot(filePath);
+      if (vRoot) {
+        try {
+          await gitExec(['-C', vRoot, 'rev-parse', '--show-toplevel'], vRoot);
+          repoRoot = vRoot;
+        } catch {
+          return { success: false, error: 'Vault directory is not a git repository' };
+        }
+      } else {
+        try {
+          repoRoot = await gitExec(['-C', dir, 'rev-parse', '--show-toplevel'], dir);
+        } catch {
+          return { success: false, error: 'Not a git repository' };
+        }
+      }
+
+      const settings = readSettings();
+      const remote = settings.githubRemote || 'origin';
+
+      // Verify remote exists
+      try {
+        await gitExec(['-C', repoRoot, 'remote', 'get-url', remote], repoRoot);
+      } catch {
+        return { success: false, error: `Git remote "${remote}" not configured` };
+      }
+
+      const branch = await gitExec(['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
+      const relativePath = path.relative(repoRoot, filePath);
+
+      // Stage the file
+      await gitExec(['-C', repoRoot, 'add', relativePath], repoRoot);
+
+      // Check if anything staged
+      let hasChanges = false;
+      try {
+        await gitExec(['-C', repoRoot, 'diff', '--cached', '--quiet'], repoRoot);
+      } catch {
+        hasChanges = true;
+      }
+
+      let sha: string | undefined;
+      if (hasChanges) {
+        const commitMsg = message || `Update ${path.basename(filePath)}`;
+        const result = await gitExec(['-C', repoRoot, 'commit', '-m', commitMsg], repoRoot);
+        const shaMatch = result.match(/\[[\w-]+ ([a-f0-9]+)\]/);
+        sha = shaMatch?.[1];
+      }
+
+      // Push
+      await gitExec(['-C', repoRoot, 'push', remote, branch], repoRoot);
+
+      return { success: true, sha, remote, branch };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Git push failed' };
+    }
+  });
+
+  ipcMain.handle('git:remote-info', async (_event, filePath: string) => {
+    try {
+      const dir = path.dirname(filePath);
+      let repoRoot: string;
+      const vRoot = resolveVaultRoot(filePath);
+      if (vRoot) {
+        try {
+          await gitExec(['-C', vRoot, 'rev-parse', '--show-toplevel'], vRoot);
+          repoRoot = vRoot;
+        } catch {
+          return { success: false, error: 'Not a git repository' };
+        }
+      } else {
+        try {
+          repoRoot = await gitExec(['-C', dir, 'rev-parse', '--show-toplevel'], dir);
+        } catch {
+          return { success: false, error: 'Not a git repository' };
+        }
+      }
+
+      const settings = readSettings();
+      const remoteName = settings.githubRemote || 'origin';
+
+      try {
+        const remoteUrl = await gitExec(['-C', repoRoot, 'remote', 'get-url', remoteName], repoRoot);
+        const branch = await gitExec(['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
+        return { success: true, remoteUrl, remoteName, branch };
+      } catch {
+        return { success: true, remoteUrl: null, remoteName: null, branch: null };
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to get remote info' };
+    }
+  });
+
+  // File operations
+  ipcMain.handle('file:rename', async (_event, filePath: string, newName: string) => {
+    try {
+      const dir = path.dirname(filePath);
+      const newPath = path.join(dir, newName);
+      if (fs.existsSync(newPath)) {
+        return { success: false, error: 'A file with that name already exists' };
+      }
+      fs.renameSync(filePath, newPath);
+      return { success: true, newPath };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Rename failed' };
+    }
+  });
+
+  ipcMain.handle('file:move', async (_event, filePath: string, destDir: string) => {
+    try {
+      const fileName = path.basename(filePath);
+      const newPath = path.join(destDir, fileName);
+      if (fs.existsSync(newPath)) {
+        return { success: false, error: 'A file with that name already exists in the destination' };
+      }
+      if (!fs.existsSync(destDir)) {
+        return { success: false, error: 'Destination directory does not exist' };
+      }
+      fs.renameSync(filePath, newPath);
+      return { success: true, newPath };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Move failed' };
+    }
+  });
+
+  ipcMain.handle('file:delete', async (_event, filePath: string) => {
+    try {
+      await shell.trashItem(filePath);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Delete failed' };
+    }
+  });
+
   // Renderer calls this on mount to get any file that triggered the app launch
   ipcMain.handle('app:get-pending-file', () => {
     const file = pendingOpenFile;
@@ -378,6 +558,9 @@ function registerIpcHandlers() {
     'claude:send-edit',
     async (_event, prompt: string, filePath: string, model?: string, refs?: { docs: string[]; mcps: string[]; vault?: boolean; architecture?: boolean }) => {
       if (currentEdit) {
+        currentEdit.onData(() => {});
+        currentEdit.onComplete(() => {});
+        currentEdit.onError(() => {});
         currentEdit.kill();
         currentEdit = null;
       }
@@ -392,18 +575,51 @@ function registerIpcHandlers() {
         refContext = resolveRefsToContext(refs, filePath, vaultRoot);
       }
 
-      const fileExists = fs.existsSync(filePath);
+      const fileExists = fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
+
+      // Backup existing file
+      if (fileExists) {
+        backupFile(filePath);
+      }
+
+      // For existing files: snapshot original and create temp proposal copy
+      let editTarget = filePath;
+      if (fileExists) {
+        try {
+          const originalContent = fs.readFileSync(filePath, 'utf-8');
+          const tmpDir = path.join(os.tmpdir(), 'komma-proposals');
+          if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+          const proposalPath = path.join(tmpDir, `edit-proposal-${Date.now()}.md`);
+          fs.writeFileSync(proposalPath, originalContent);
+          currentEditProposalPath = proposalPath;
+          currentEditOriginalContent = originalContent;
+          editTarget = proposalPath;
+        } catch {
+          currentEditProposalPath = null;
+          currentEditOriginalContent = null;
+        }
+      } else {
+        currentEditProposalPath = null;
+        currentEditOriginalContent = null;
+      }
+
+      // Replace real file path with edit target in the prompt to prevent
+      // Claude from editing the original file instead of the temp proposal copy
+      const adjustedPrompt = editTarget !== filePath
+        ? prompt.split(filePath).join(editTarget)
+        : prompt;
+
       const fullPrompt = isFast
         ? (fileExists
-            ? `Edit the file at ${filePath}. Read it, apply the changes, and stop. Do not explain.\n\n${prompt}${refContext}`
-            : `${prompt}${refContext}`)
+            ? `Edit the file at ${editTarget}. Read it, apply the changes, and stop. Do not explain.\n\n${adjustedPrompt}${refContext}`
+            : `${adjustedPrompt}${refContext}`)
         : (fileExists
-            ? `Edit the file at ${filePath}:\n\n${prompt}${refContext}`
-            : `${prompt}${refContext}`);
+            ? `Edit the file at ${editTarget}:\n\n${adjustedPrompt}${refContext}`
+            : `${adjustedPrompt}${refContext}`);
       accumulatedEditText = '';
       currentEdit = spawnClaude(fullPrompt, {
-        allowedTools: isFast ? ['Read', 'Edit', 'Write'] : undefined,
-        maxTurns: isFast ? 5 : undefined,
+        allowedTools: ['Read', 'Edit', 'Write'],
+        maxTurns: isFast ? 5 : 10,
         model: useModel,
       });
 
@@ -416,16 +632,53 @@ function registerIpcHandlers() {
       });
 
       currentEdit.onComplete((result) => {
-        mainWindow?.webContents.send('claude:complete', {
-          type: 'edit',
-          success: true,
-          content: result,
-        });
+        if (fileExists && currentEditProposalPath && currentEditOriginalContent) {
+          // Read proposed content from temp file
+          let proposedContent = currentEditOriginalContent;
+          try { proposedContent = fs.readFileSync(currentEditProposalPath, 'utf-8'); } catch {}
+          try { fs.unlinkSync(currentEditProposalPath); } catch {}
+
+          // Safety: restore original if the real file was somehow modified
+          let realFileWasModified = false;
+          try {
+            const current = fs.readFileSync(filePath, 'utf-8');
+            if (current !== currentEditOriginalContent) {
+              realFileWasModified = true;
+              fs.writeFileSync(filePath, currentEditOriginalContent);
+            }
+          } catch {}
+
+          const hasEdits = proposedContent !== currentEditOriginalContent;
+          console.log(`[claude:send-edit] complete: hasEdits=${hasEdits}, realFileWasModified=${realFileWasModified}, proposalPath=${currentEditProposalPath}`);
+          if (!hasEdits && realFileWasModified) {
+            console.warn('[claude:send-edit] Claude edited the real file instead of the proposal file — changes were reverted');
+          }
+          mainWindow?.webContents.send('claude:complete', {
+            type: 'edit',
+            success: true,
+            content: result,
+            proposal: hasEdits ? { originalContent: currentEditOriginalContent, proposedContent, docPath: filePath } : null,
+          });
+        } else {
+          // New file creation — verify it was written
+          const fileWritten = !fileExists ? fs.existsSync(filePath) : true;
+          mainWindow?.webContents.send('claude:complete', {
+            type: 'edit',
+            success: fileWritten,
+            content: result,
+            error: fileWritten ? undefined : 'Claude completed but did not create the file',
+          });
+        }
         currentEdit = null;
         currentEditDocPath = null;
+        currentEditProposalPath = null;
+        currentEditOriginalContent = null;
       });
 
       currentEdit.onError((error) => {
+        if (currentEditProposalPath) {
+          try { fs.unlinkSync(currentEditProposalPath); } catch {}
+        }
         mainWindow?.webContents.send('claude:complete', {
           type: 'edit',
           success: false,
@@ -433,6 +686,8 @@ function registerIpcHandlers() {
         });
         currentEdit = null;
         currentEditDocPath = null;
+        currentEditProposalPath = null;
+        currentEditOriginalContent = null;
       });
     },
   );
@@ -451,17 +706,23 @@ function registerIpcHandlers() {
       images?: Array<{ data: string; mimeType: string; name: string }>,
     ) => {
       if (currentChat) {
+        currentChat.onData(() => {});
+        currentChat.onComplete(() => {});
+        currentChat.onError(() => {});
         currentChat.kill();
         currentChat = null;
       }
       currentChatDocPath = docPath;
+
+      // Backup original before any chat editing
+      backupFile(docPath);
 
       // Snapshot original content and create temp copy for proposal-based editing
       let originalContent = '';
       let proposalPath = '';
       try {
         originalContent = fs.readFileSync(docPath, 'utf-8');
-        const tmpDir = path.join(os.tmpdir(), 'helm-proposals');
+        const tmpDir = path.join(os.tmpdir(), 'komma-proposals');
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
         proposalPath = path.join(tmpDir, `proposal-${Date.now()}.md`);
         fs.writeFileSync(proposalPath, originalContent);
@@ -523,7 +784,7 @@ function registerIpcHandlers() {
       // Save attached images to temp files
       const tempImagePaths: string[] = [];
       if (images && images.length > 0) {
-        const tmpDir = path.join(os.tmpdir(), 'helm-chat-images');
+        const tmpDir = path.join(os.tmpdir(), 'komma-chat-images');
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
         for (const img of images) {
           const ext = img.mimeType.split('/')[1] || 'png';
@@ -538,7 +799,8 @@ function registerIpcHandlers() {
       const fullPrompt = promptParts.join('\n\n---\n\n');
       accumulatedChatText = '';
       currentChat = spawnClaude(fullPrompt, {
-        maxTurns: useModel === 'opus' ? undefined : 10,
+        allowedTools: ['Read', 'Edit', 'Write'],
+        maxTurns: useModel === 'opus' ? 15 : 10,
         model: useModel,
       });
 
@@ -757,6 +1019,7 @@ function registerIpcHandlers() {
 
             let sectionOutput = '';
             const proc = spawnClaude(sectionPrompt, {
+              allowedTools: ['Read', 'Edit', 'Write'],
               model: useModel,
               maxTurns: 3,
             });
@@ -815,14 +1078,16 @@ function registerIpcHandlers() {
         .map(r => r.error ? `## ${r.title}\n\n*Error generating this section: ${r.error}*` : `## ${r.title}\n\n${r.content}`)
         .join('\n\n---\n\n');
 
-      // Write to file
-      fs.writeFileSync(filePath, combinedContent, 'utf-8');
+      // Backup before overwriting with generated content
+      backupFile(filePath);
 
+      // Send combined content as proposal — don't write directly
       mainWindow?.webContents.send('claude:multi-complete', {
         success: !cancelled,
         filePath,
         sectionCount: sections.length,
         errorCount: results.filter(r => r.error).length,
+        proposedContent: combinedContent,
       });
 
       return { success: true, filePath };
@@ -1000,9 +1265,9 @@ function buildAppMenu() {
 
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'Helm',
+      label: 'Komma',
       submenu: [
-        { role: 'about', label: 'About Helm' },
+        { role: 'about', label: 'About Komma' },
         { type: 'separator' },
         { role: 'hide' },
         { role: 'hideOthers' },
@@ -1147,9 +1412,9 @@ function buildAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.name = 'Helm';
+app.name = 'Komma';
 
-const PENDING_FILE = '/tmp/helm-open-file';
+const PENDING_FILE = '/tmp/komma-open-file';
 
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (production uses the bundled icon)

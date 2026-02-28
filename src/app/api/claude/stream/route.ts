@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 
-const STREAM_FILE = '/tmp/helm-stream.log';
+const STREAM_FILE = '/tmp/komma-stream.log';
 
 // GET: Read current stream content
 export async function GET() {

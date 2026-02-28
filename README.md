@@ -1,31 +1,26 @@
-# Helm
+# Komma
 
 A markdown document editor with AI editing, inline diff review, and git history — built with Electron + Next.js.
 
 ## Quick Start
 
-### One-liner install
+### Install with Homebrew (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/0xSmick/helm/main/scripts/install.sh | bash
+brew install --cask komma-app/komma/komma
 ```
 
-This clones the repo to `~/Developer/helm`, installs dependencies, and compiles Electron. Set `HELM_DIR` to change the install location.
-
-### Manual install
+### Install from source
 
 ```bash
-git clone https://github.com/0xSmick/helm.git
-cd helm
+git clone https://github.com/komma-app/komma.git
+cd komma
 ./scripts/setup.sh    # checks prerequisites, installs deps, compiles
 npm run electron:dev   # launch
 ```
 
 ### Prerequisites
 
-- **Node.js v20+** — `node -v`
-- **Git** — `git -v`
-- **Xcode Command Line Tools** (macOS) — `xcode-select --install`
 - **Claude CLI** — AI features require the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (runs on your Max subscription, no API key):
 
 ```bash
@@ -71,7 +66,7 @@ src/app/page.tsx       Main React component
 src/app/components/    UI components (Sidebar, InlineDiffView, tabs/)
 src/app/hooks/         React hooks (useDocument, useClaude, useChat, useVim)
 src/lib/db.ts          SQLite database (comments, changelogs, chat)
-data/helm.db           Database file (created on first run)
+data/komma.db          Database file (created on first run)
 ```
 
 ## Scripts
@@ -86,7 +81,7 @@ data/helm.db           Database file (created on first run)
 
 **Vault root** — set in Settings (gear icon) or place a `.vault` marker file at your documents root directory.
 
-**Settings** are stored at `~/.helm/config.json`.
+**Settings** are stored at `~/.komma/config.json`.
 
 ## Troubleshooting
 

@@ -13,6 +13,7 @@ interface NewDocumentModalProps {
   show: boolean;
   currentDir: string;
   onSubmit: (filePath: string, prompt: string) => void;
+  onCreateBlank: (filePath: string) => void;
   onCancel: () => void;
 }
 
@@ -20,6 +21,7 @@ export default function NewDocumentModal({
   show,
   currentDir,
   onSubmit,
+  onCreateBlank,
   onCancel,
 }: NewDocumentModalProps) {
   const [step, setStep] = useState<1 | 2>(1);
@@ -145,9 +147,17 @@ export default function NewDocumentModal({
     setSelectedContextPaths((prev) => prev.filter((p) => p !== path));
   };
 
+  const handleCreateBlank = useCallback(() => {
+    if (!fileName.trim()) return;
+    const name = fileName.endsWith('.md') ? fileName : fileName + '.md';
+    const filePath = `${currentDir}/${name}`;
+    onCreateBlank(filePath);
+  }, [fileName, currentDir, onCreateBlank]);
+
   if (!show) return null;
 
   const canSubmit = fileName.trim() && prompt.trim();
+  const canCreateBlank = fileName.trim();
 
   return (
     <>
@@ -620,6 +630,14 @@ export default function NewDocumentModal({
                   style={{ color: 'var(--color-ink-muted)' }}
                 >
                   Back
+                </button>
+                <button
+                  onClick={handleCreateBlank}
+                  disabled={!canCreateBlank}
+                  className="px-4 py-1.5 text-sm rounded-md font-medium transition-all disabled:opacity-40 btn-ghost"
+                  style={{ color: canCreateBlank ? 'var(--color-ink-muted)' : 'var(--color-ink-faded)' }}
+                >
+                  Create Blank
                 </button>
                 <button
                   onClick={handleSubmit}

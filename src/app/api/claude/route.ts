@@ -2,8 +2,8 @@ import { NextRequest } from 'next/server';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 
 // File where comments are written for Claude Code to read
-const COMMENTS_FILE = '/tmp/helm-comments.json';
-const STATUS_FILE = '/tmp/helm-status.json';
+const COMMENTS_FILE = '/tmp/komma-comments.json';
+const STATUS_FILE = '/tmp/komma-status.json';
 
 export async function POST(request: NextRequest) {
   const { prompt, filePath } = await request.json();

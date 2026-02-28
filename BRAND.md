@@ -1,23 +1,23 @@
-# Helm — Brand Guidelines
+# Komma — Brand Guidelines
 
 ## Brand Essence
 
-**Helm** is a PM IDE — a focused environment where product managers write specs, review changes with AI, and steer their product forward. It's not a generic doc tool. It's an opinionated workspace built for people who ship.
+**Komma** is a writing tool — a focused environment where writers craft documents, review changes with AI, and refine their prose. It's not a generic doc tool. It's an opinionated workspace built for people who care about what they write.
 
-**Tagline:** *Steer the product.*
+**Tagline:** *Every word, precisely placed.*
 
-**One-liner:** AI-powered spec editor for product managers who ship.
+**One-liner:** AI-powered document editor for writers who care about craft.
 
 ---
 
 ## Name
 
-**Helm** — from the ship's wheel. The PM is the captain; Helm is their instrument of control. Short, commanding, easy to say and type.
+**Komma** — from "comma" in many European languages (German, Swedish, Dutch, and others). The comma is the smallest punctuation mark that changes meaning — it represents precision, rhythm, and the care that separates good writing from great writing.
 
-- Always written as **Helm** (capital H, no "the")
-- Never "HELM" or "helm" in marketing copy
-- In code/CLI contexts, lowercase `helm` is acceptable
-- If disambiguation is needed: "Helm Editor" or "Helm PM"
+- Always written as **Komma** (capital K, no "the")
+- Never "KOMMA" or "komma" in marketing copy
+- In code/CLI contexts, lowercase `komma` is acceptable
+- If disambiguation is needed: "Komma Editor" or "Komma App"
 
 ---
 
@@ -25,13 +25,13 @@
 
 | Trait | Description |
 |-------|-------------|
-| **Decisive** | No fluff. Every element earns its place. PMs don't have time for decoration. |
+| **Precise** | Every element earns its place. Writers don't have time for decoration. |
 | **Confident** | Knows what it is. Doesn't try to be everything. |
 | **Crafted** | Feels premium but not precious. Tools should feel good to use. |
 | **Dark-first** | Built for late nights and deep focus. Light mode exists but dark is home. |
 | **Editorial** | Respects the written word. Typography matters. |
 
-**Voice:** Direct, concise, technical but not cold. Speaks like a senior PM — no jargon, no marketing fluff. Says "Write your spec" not "Empower your product vision."
+**Voice:** Direct, concise, technical but not cold. Speaks like a seasoned editor — no jargon, no marketing fluff. Says "Write better" not "Empower your content creation journey."
 
 ---
 
@@ -39,16 +39,16 @@
 
 ### Concept Direction
 
-The logo should combine **navigation/steering** with **document/text** energy. Two strong directions:
+The logo should combine **punctuation/precision** with **document/text** energy. Two strong directions:
 
-**Direction A — The Wheel**
-A minimal ship's wheel, abstracted to its essential geometry. Think 6-8 spokes radiating from a center point, forming a circle. Clean enough to work as a favicon at 16px. The spokes could subtly reference a cursor or text caret.
+**Direction A — The Comma Mark**
+A stylized comma, elevated from humble punctuation to a bold graphic mark. Clean enough to work as a favicon at 16px. The curve could subtly reference a pen stroke or cursor.
 
-**Direction B — The Compass Mark**
-A single directional mark — like a compass needle or abstract "H" formed from angular, nautical geometry. More modern, less literal. Works well as a monogram.
+**Direction B — The K Glyph**
+A custom letterform "K" where the diagonal strokes suggest a comma's curve or a pen in motion. Combines the initial with the brand metaphor in one mark.
 
-**Direction C — The Helm "H"**
-A custom letterform "H" where the crossbar is a stylized rudder or tiller. Combines the initial with the metaphor in one mark.
+**Direction C — The Precision Mark**
+An abstract mark that evokes both punctuation and editorial precision — perhaps overlapping comma forms, or a mark that suggests text being refined. Modern, geometric, distinctive.
 
 ### Logo Requirements
 
@@ -73,13 +73,13 @@ Four palette directions. Each follows the same principle: **one dominant accent*
 
 ---
 
-### Option A: Helm Violet *(Linear-adjacent, proven)*
+### Option A: Komma Violet *(Linear-adjacent, proven)*
 
 The closest to Linear's proven aesthetic. Purple communicates precision, craft, and modernity. Differentiates from the sea of blue dev tools.
 
 | Role | Name | Hex | Note |
 |------|------|-----|------|
-| Accent | **Helm Violet** | `#8B7BF5` | Slightly warmer than Linear's blue-purple |
+| Accent | **Komma Violet** | `#8B7BF5` | Slightly warmer than Linear's blue-purple |
 | Accent Light | **Lavender** | `#B4A9FF` | Hover states, secondary highlights |
 | Background | **Void** | `#0A0A0F` | Near-black with purple undertone |
 | Surface | **Onyx** | `#141419` | Cards, sidebar, elevated surfaces |
@@ -100,15 +100,15 @@ The closest to Linear's proven aesthetic. Purple communicates precision, craft, 
 | Border | **Silver** | `#E2E2E8` |
 | Text Primary | **Obsidian** | `#1A1A2E` |
 | Text Secondary | **Stone** | `#8888A0` |
-| Accent | **Helm Violet** | `#7C6BEB` | *Slightly darker for contrast on white* |
+| Accent | **Komma Violet** | `#7C6BEB` | *Slightly darker for contrast on white* |
 
 **Vibe:** Polished, confident, Silicon Valley craft tool. The safe bet.
 
 ---
 
-### Option B: Helm Indigo *(Deeper, more nautical)*
+### Option B: Komma Indigo *(Deeper, richer)*
 
-A deeper, more saturated blue-indigo. Feels like deep ocean at night — ties back to the nautical "helm" metaphor without being literal. More unique than violet.
+A deeper, more saturated blue-indigo. Feels like midnight focus — ties back to the concentration and precision that good writing demands. More unique than violet.
 
 | Role | Name | Hex | Note |
 |------|------|-----|------|
@@ -135,11 +135,11 @@ A deeper, more saturated blue-indigo. Feels like deep ocean at night — ties ba
 | Text Secondary | **Haze** | `#6B7280` |
 | Accent | **Indigo** | `#5558E6` | *Slightly darker for legibility* |
 
-**Vibe:** Deep water. Serious tool for serious work. Slightly more unique than violet.
+**Vibe:** Midnight focus. Serious tool for serious work. Slightly more unique than violet.
 
 ---
 
-### Option C: Helm White *(Monochrome, editorial)*
+### Option C: Komma White *(Monochrome, editorial)*
 
 No color accent at all. Pure black and white with a single warm highlight for interactive states. This is the most opinionated choice — says "the writing is the product, not the chrome." Think iA Writer meets Linear.
 
@@ -172,9 +172,9 @@ No color accent at all. Pure black and white with a single warm highlight for in
 
 ---
 
-### Option D: Helm Emerald *(Current direction, refined)*
+### Option D: Komma Emerald *(Current direction, refined)*
 
-Evolves your current cyan toward a richer emerald-green. Feels like a ship's control room — green instruments in the dark. Unique in the PM tool space (nobody does green well).
+Evolves your current cyan toward a richer emerald-green. Feels like focused precision — green signals clarity and correctness. Unique in the writing tool space (nobody does green well).
 
 | Role | Name | Hex | Note |
 |------|------|-----|------|
@@ -201,7 +201,7 @@ Evolves your current cyan toward a richer emerald-green. Feels like a ship's con
 | Text Secondary | **Moss** | `#5E7A6C` |
 | Accent | **Emerald** | `#0D9668` | *Darker for legibility on white* |
 
-**Vibe:** Maritime instrument panel. Distinctive. "That green app." Closest to current, easiest migration.
+**Vibe:** Precision instrument. Distinctive. "That green app." Closest to current, easiest migration.
 
 ---
 
@@ -224,7 +224,7 @@ These stay consistent regardless of which accent palette you choose:
 
 **Option A (Violet)** is the safest — proven by Linear, Figma, and others. You'll look premium immediately.
 
-**Option B (Indigo)** is the sweet spot — distinctive enough to own, familiar enough to trust. Best match for the "Helm" nautical identity.
+**Option B (Indigo)** is the sweet spot — distinctive enough to own, familiar enough to trust. Best match for the precision-focused identity.
 
 **Option C (Monochrome)** is the boldest — memorable but polarizing. Best if you want the writing to be the star.
 
@@ -256,7 +256,7 @@ These stay consistent regardless of which accent palette you choose:
 - **Style:** Outlined, 1.5-2px stroke, rounded caps
 - **Size:** 14-16px in the app UI
 - **Source:** Lucide icons or custom, matching the stroke style
-- Icons should feel like they belong on a ship's instrument panel — precise, functional, no fill
+- Icons should feel like precision instruments — clean, functional, no fill
 
 ---
 
@@ -264,7 +264,7 @@ These stay consistent regardless of which accent palette you choose:
 
 The macOS dock icon should:
 - Use the **Deep Navy** background (or a very dark gradient from `#0B0D14` to `#12151E`)
-- Feature the logomark in **Helm Cyan** with a subtle glow
+- Feature the logomark in the chosen accent color with a subtle glow
 - Follow Apple's rounded-rect (squircle) shape
 - Have enough contrast to stand out in both light and dark dock backgrounds
 - Feel premium — slight depth via shadow or inner lighting is acceptable
@@ -274,27 +274,27 @@ The macOS dock icon should:
 ## Photography & Imagery
 
 If used in marketing:
-- Dark, moody workspaces — late night coding/writing vibes
+- Dark, moody workspaces — late night writing vibes
 - Close-ups of screens showing the app (real UI, not mockups)
-- Nautical references kept abstract — no literal boats
+- Typographic details, punctuation close-ups, editorial imagery
 - Grain/noise texture acceptable for editorial feel
 
 ---
 
-## What Helm Is Not
+## What Komma Is Not
 
 - Not playful or whimsical (no emoji, no illustration-heavy brand)
 - Not enterprise/corporate (no blue gradients, no stock photos of people pointing at screens)
-- Not a generic notes app (don't position against Notion/Obsidian — Helm is a PM IDE)
-- Not AI-first branding (Claude powers it, but Helm is the product. Don't lead with "AI")
+- Not a generic notes app (don't position against Notion/Obsidian — Komma is a precision writing tool)
+- Not AI-first branding (Claude powers it, but Komma is the product. Don't lead with "AI")
 
 ---
 
 ## Usage Examples
 
-**Good:** "Write your spec in Helm." / "Helm catches what you missed." / "Ship from Helm."
+**Good:** "Write it in Komma." / "Komma catches what you missed." / "Every word, precisely placed."
 
-**Bad:** "Helm empowers product leaders to leverage AI-driven documentation workflows." / "Your AI copilot for product management."
+**Bad:** "Komma empowers content creators to leverage AI-driven documentation workflows." / "Your AI copilot for writing."
 
 ---
 

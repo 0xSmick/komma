@@ -1,25 +1,23 @@
 'use client';
 
-interface GitCommit {
-  hash: string;
-  shortHash: string;
-  message: string;
-  date: string;
-  author: string;
+interface Snapshot {
+  id: number;
+  source: 'save' | 'claude_edit' | 'restore';
+  created_at: string;
 }
 
 interface HistoryTabProps {
-  commits: GitCommit[];
+  snapshots: Snapshot[];
   isLoading: boolean;
-  selectedCommit: GitCommit | null;
-  onSelectCommit: (commit: GitCommit) => void;
+  selectedSnapshot: Snapshot | null;
+  onSelectSnapshot: (snapshot: Snapshot) => void;
+  onRestore: (snapshot: Snapshot) => void;
   onBack: () => void;
-  isElectron: boolean;
   isDiffLoading: boolean;
 }
 
 function formatRelativeDate(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = new Date(dateStr + 'Z'); // SQLite dates are UTC
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSec = Math.floor(diffMs / 1000);
@@ -34,30 +32,27 @@ function formatRelativeDate(dateStr: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function commitIcon(message: string) {
-  if (message.startsWith('Applied edit')) return 'pencil';
-  if (message.startsWith('Checkpoint')) return 'checkpoint';
-  if (message.startsWith('Manual save')) return 'save';
-  return 'commit';
+function sourceLabel(source: string): string {
+  if (source === 'claude_edit') return 'Claude edit';
+  if (source === 'restore') return 'Restored';
+  return 'Saved';
+}
+
+function sourceIcon(source: string): 'pencil' | 'checkpoint' | 'save' {
+  if (source === 'claude_edit') return 'pencil';
+  if (source === 'restore') return 'checkpoint';
+  return 'save';
 }
 
 export default function HistoryTab({
-  commits,
+  snapshots,
   isLoading,
-  selectedCommit,
-  onSelectCommit,
+  selectedSnapshot,
+  onSelectSnapshot,
+  onRestore,
   onBack,
-  isElectron,
   isDiffLoading,
 }: HistoryTabProps) {
-  if (!isElectron) {
-    return (
-      <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--color-ink-faded)', fontSize: '13px' }}>
-        Git history requires the desktop app
-      </div>
-    );
-  }
-
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 py-8 justify-center" style={{ color: 'var(--color-ink-faded)' }}>
@@ -70,8 +65,8 @@ export default function HistoryTab({
     );
   }
 
-  // When a commit is selected, show info + back button in sidebar
-  if (selectedCommit) {
+  // When a snapshot is selected, show info + back button + restore
+  if (selectedSnapshot) {
     return (
       <div>
         <button
@@ -84,10 +79,10 @@ export default function HistoryTab({
             cursor: 'pointer',
           }}
         >
-          &larr; All commits
+          &larr; All versions
         </button>
 
-        {/* Selected commit highlighted */}
+        {/* Selected snapshot highlighted */}
         <div
           className="px-2 py-2 rounded-md mb-3"
           style={{
@@ -96,16 +91,28 @@ export default function HistoryTab({
           }}
         >
           <div className="text-xs font-medium" style={{ color: 'var(--color-ink)' }}>
-            {selectedCommit.message}
+            {sourceLabel(selectedSnapshot.source)}
           </div>
           <div className="text-xs mt-1" style={{ color: 'var(--color-ink-faded)' }}>
-            <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '10px' }}>{selectedCommit.shortHash}</span>
-            {' \u00b7 '}
-            {formatRelativeDate(selectedCommit.date)}
-            {' \u00b7 '}
-            {selectedCommit.author}
+            {formatRelativeDate(selectedSnapshot.created_at)}
           </div>
         </div>
+
+        {/* Restore button */}
+        <button
+          onClick={() => onRestore(selectedSnapshot)}
+          className="w-full text-xs px-3 py-2 rounded-md font-medium transition-colors mb-3"
+          style={{
+            color: 'var(--color-accent)',
+            background: 'var(--color-accent-subtle)',
+            border: '1px solid var(--color-accent)',
+            cursor: 'pointer',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.8'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+        >
+          Restore this version
+        </button>
 
         {isDiffLoading && (
           <div className="flex items-center gap-2 py-4 justify-center" style={{ color: 'var(--color-ink-faded)' }}>
@@ -117,21 +124,21 @@ export default function HistoryTab({
           </div>
         )}
 
-        {/* Rest of commits dimmed */}
+        {/* Rest of snapshots dimmed */}
         <div style={{ opacity: 0.5 }}>
-          <div className="text-xs mb-1" style={{ color: 'var(--color-ink-faded)' }}>Other commits</div>
-          {commits.filter(c => c.hash !== selectedCommit.hash).map((commit) => (
+          <div className="text-xs mb-1" style={{ color: 'var(--color-ink-faded)' }}>Other versions</div>
+          {snapshots.filter(s => s.id !== selectedSnapshot.id).map((snapshot) => (
             <button
-              key={commit.hash}
-              onClick={() => onSelectCommit(commit)}
+              key={snapshot.id}
+              onClick={() => onSelectSnapshot(snapshot)}
               className="w-full text-left px-2 py-1.5 rounded-md transition-colors"
               style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = ''; }}
             >
-              <div className="text-xs truncate" style={{ color: 'var(--color-ink)' }}>{commit.message}</div>
+              <div className="text-xs truncate" style={{ color: 'var(--color-ink)' }}>{sourceLabel(snapshot.source)}</div>
               <div className="text-xs" style={{ color: 'var(--color-ink-faded)', fontSize: '10px' }}>
-                {commit.shortHash} &middot; {formatRelativeDate(commit.date)}
+                {formatRelativeDate(snapshot.created_at)}
               </div>
             </button>
           ))}
@@ -140,8 +147,8 @@ export default function HistoryTab({
     );
   }
 
-  // Commit list
-  if (commits.length === 0) {
+  // Snapshot list
+  if (snapshots.length === 0) {
     return (
       <div style={{ padding: '24px 8px', textAlign: 'center', color: 'var(--color-ink-faded)', fontSize: '13px' }}>
         No history available
@@ -151,12 +158,12 @@ export default function HistoryTab({
 
   return (
     <div className="flex flex-col gap-0.5">
-      {commits.map((commit) => {
-        const icon = commitIcon(commit.message);
+      {snapshots.map((snapshot) => {
+        const icon = sourceIcon(snapshot.source);
         return (
           <button
-            key={commit.hash}
-            onClick={() => onSelectCommit(commit)}
+            key={snapshot.id}
+            onClick={() => onSelectSnapshot(snapshot)}
             className="w-full text-left px-2 py-2 rounded-md transition-colors"
             style={{
               background: 'transparent',
@@ -179,12 +186,10 @@ export default function HistoryTab({
                   justifyContent: 'center',
                   background: icon === 'pencil' ? 'var(--color-accent-subtle)' :
                     icon === 'checkpoint' ? 'rgba(234, 179, 8, 0.15)' :
-                    icon === 'save' ? 'rgba(34, 197, 94, 0.15)' :
-                    'var(--color-surface-raised)',
+                    'rgba(34, 197, 94, 0.15)',
                   color: icon === 'pencil' ? 'var(--color-accent)' :
                     icon === 'checkpoint' ? 'var(--color-amber)' :
-                    icon === 'save' ? 'var(--color-success)' :
-                    'var(--color-ink-faded)',
+                    'var(--color-success)',
                 }}
               >
                 {icon === 'pencil' ? (
@@ -196,14 +201,10 @@ export default function HistoryTab({
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M12 2v20M2 12h20" />
                   </svg>
-                ) : icon === 'save' ? (
+                ) : (
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                     <polyline points="17 21 17 13 7 13 7 21" />
-                  </svg>
-                ) : (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <circle cx="12" cy="12" r="4" />
                   </svg>
                 )}
               </div>
@@ -212,12 +213,10 @@ export default function HistoryTab({
                   className="text-xs font-medium truncate"
                   style={{ color: 'var(--color-ink)', lineHeight: '1.4' }}
                 >
-                  {commit.message}
+                  {sourceLabel(snapshot.source)}
                 </div>
                 <div className="text-xs" style={{ color: 'var(--color-ink-faded)', marginTop: '1px' }}>
-                  <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '10px' }}>{commit.shortHash}</span>
-                  {' \u00b7 '}
-                  {formatRelativeDate(commit.date)}
+                  {formatRelativeDate(snapshot.created_at)}
                 </div>
               </div>
             </div>

@@ -12,7 +12,7 @@ export function getDb(): Database.Database {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  const dbPath = path.join(dataDir, 'helm.db');
+  const dbPath = path.join(dataDir, 'komma.db');
   db = new Database(dbPath);
 
   db.pragma('journal_mode = WAL');
@@ -67,6 +67,14 @@ export function getDb(): Database.Database {
       role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
       content TEXT NOT NULL,
       context_selection TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'save',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
