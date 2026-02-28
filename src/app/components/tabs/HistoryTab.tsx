@@ -20,16 +20,21 @@ function formatRelativeDate(dateStr: string): string {
   const date = new Date(dateStr + 'Z'); // SQLite dates are UTC
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHr = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHr / 24);
+  const diffMin = Math.floor(diffMs / 60000);
 
-  if (diffSec < 60) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  if (diffMin < 1) return `just now · ${time}`;
+  if (diffMin < 60) return `${diffMin}m ago · ${time}`;
+
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  if (isToday) return `Today · ${time}`;
+  if (isYesterday) return `Yesterday · ${time}`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ` · ${time}`;
 }
 
 function sourceLabel(source: string): string {
