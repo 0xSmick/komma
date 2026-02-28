@@ -8,12 +8,13 @@ import rehypeRaw from 'rehype-raw';
 import dynamic from 'next/dynamic';
 
 import { useDocument } from './hooks/useDocument';
-import { Comment, BrowserFile } from './types';
+import { Comment, BrowserFile, ReviewComment } from './types';
 import { useComments } from './hooks/useComments';
 import { useChangelog } from './hooks/useChangelog';
 import { useClaude } from './hooks/useClaude';
 import { useChat } from './hooks/useChat';
 import { useVim } from './hooks/useVim';
+import { useReview } from './hooks/useReview';
 
 import Header from './components/Header';
 import TabBar from './components/TabBar';
@@ -43,6 +44,7 @@ export default function Home() {
   const doc = useDocument();
   const { comments, setComments, addComment, removeComment, patchComments, markApplied } = useComments(doc.filePath);
   const changelog = useChangelog();
+  const review = useReview(doc.filePath);
 
   // TipTap editor ref (exposed by RichEditor via onEditorReady callback)
   const editorRef = useRef<any>(null);
@@ -100,6 +102,8 @@ export default function Home() {
   const [githubFileUrl, setGithubFileUrl] = useState<string | null>(null);
   const [settingsGithubSync, setSettingsGithubSync] = useState(false);
   const [settingsGithubRemote, setSettingsGithubRemote] = useState('');
+  const [reviewEnabled, setReviewEnabled] = useState(false);
+  const [settingsReviewEnabled, setSettingsReviewEnabled] = useState(false);
   const [settingsGoogleClientId, setSettingsGoogleClientId] = useState('');
   const [settingsGoogleClientSecret, setSettingsGoogleClientSecret] = useState('');
   const [settingsDefaultModel, setSettingsDefaultModel] = useState<string>('sonnet');
@@ -238,6 +242,18 @@ export default function Home() {
       return () => clearTimeout(t);
     }
   }, [githubPushStatus]);
+
+  // Auto-dismiss review status toast
+  useEffect(() => {
+    if (review.status === 'done') {
+      const t = setTimeout(() => review.dismissStatus(), 4000);
+      return () => clearTimeout(t);
+    }
+    if (review.status === 'error') {
+      const t = setTimeout(() => review.dismissStatus(), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [review.status]);
 
   // When entering/exiting edit mode, restore scroll position from fraction saved before state change
   const prevEditMode = useRef(doc.isEditMode);
@@ -543,6 +559,7 @@ export default function Home() {
       try {
         const settings = await window.electronAPI?.settings.get();
         if (settings?.githubAutoSync) setGithubSyncEnabled(true);
+        if (settings?.reviewEnabled) setReviewEnabled(true);
         if (settings?.vaultRoot) {
           setVaultRoot(settings.vaultRoot);
           return;
@@ -1324,6 +1341,16 @@ export default function Home() {
     }
   }, [doc.filePath]);
 
+  const handleSendReviewToClaude = useCallback((comment: ReviewComment) => {
+    if (comment.quotedText) {
+      setSelectedText(comment.quotedText);
+    }
+    // Pre-fill the comment as an editing instruction
+    setShowCommentInput(true);
+    setNewComment(comment.body);
+    setTooltipPosition({ x: window.innerWidth / 2, y: 200 });
+  }, []);
+
   const handleSelectFile = useCallback((path: string) => {
     setShowFileBrowser(false);
     const existingIdx = tabs.findIndex(t => t.path === path);
@@ -1754,12 +1781,24 @@ export default function Home() {
         githubFileUrl={githubFileUrl}
         onPushToGithub={handlePushToGithub}
         onDismissGithubPush={() => { setGithubPushStatus('idle'); setGithubPushError(null); setGithubFileUrl(null); }}
+        reviewPrUrl={reviewEnabled ? review.prUrl : null}
+        reviewPrNumber={reviewEnabled ? review.prNumber : null}
+        reviewIsOnBranch={reviewEnabled ? review.isOnReviewBranch : false}
+        reviewStatus={reviewEnabled ? review.status : 'idle'}
+        reviewStatusMessage={reviewEnabled ? review.statusMessage : null}
+        reviewError={reviewEnabled ? review.error : null}
+        onSubmitForReview={reviewEnabled ? () => review.submitForReview() : undefined}
+        onPullReviews={reviewEnabled ? () => review.pullComments() : undefined}
+        onPushReviewUpdate={reviewEnabled ? () => review.pushUpdate() : undefined}
+        onDismissReviewStatus={reviewEnabled ? review.dismissStatus : undefined}
+        onOpenReviewUrl={reviewEnabled ? () => { if (review.prUrl) window.electronAPI?.google.openUrl(review.prUrl); } : undefined}
         onOpenSettings={async () => {
           try {
             const settings = await window.electronAPI?.settings.get();
             setSettingsVaultRoot(settings?.vaultRoot || '');
             setSettingsGithubSync(!!settings?.githubAutoSync);
             setSettingsGithubRemote(settings?.githubRemote || '');
+            setSettingsReviewEnabled(!!settings?.reviewEnabled);
             setSettingsDefaultModel(settings?.defaultModel || 'sonnet');
             const creds = await window.electronAPI?.google.loadCredentials();
             setSettingsGoogleClientId(creds?.clientId || '');
@@ -2273,6 +2312,8 @@ export default function Home() {
               setExpandedEntryId={changelog.setExpandedEntryId}
               onClearChangelogs={() => changelog.clearChangelogs(doc.filePath)}
               onNavigateToComment={handleNavigateToComment}
+              reviewComments={review.reviewComments}
+              onSendReviewToClaude={handleSendReviewToClaude}
             />
           ) : activeTab === 'chat' ? (
             <ChatTab
@@ -2594,6 +2635,21 @@ export default function Home() {
                 </>
               )}
             </div>
+            {/* Review Workflow */}
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginBottom: '20px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 500, color: 'var(--color-ink)', marginBottom: '6px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={settingsReviewEnabled}
+                  onChange={(e) => setSettingsReviewEnabled(e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--color-accent)' }}
+                />
+                Review workflow
+              </label>
+              <p style={{ fontSize: '12px', color: 'var(--color-ink-faded)', margin: '0' }}>
+                Submit docs for review via GitHub PRs, pull reviewer comments, and push updates. Requires <code style={{ fontSize: '11px', background: 'var(--color-paper-dark)', padding: '1px 4px', borderRadius: '3px' }}>gh</code> CLI.
+              </p>
+            </div>
             {/* Google Docs */}
             <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginBottom: '20px' }}>
               <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-ink)', marginBottom: '6px' }}>
@@ -2691,6 +2747,8 @@ export default function Home() {
                   claude.setModel(settingsDefaultModel as 'haiku' | 'sonnet' | 'opus');
                   await window.electronAPI?.settings.set('githubAutoSync', settingsGithubSync);
                   setGithubSyncEnabled(settingsGithubSync);
+                  await window.electronAPI?.settings.set('reviewEnabled', settingsReviewEnabled);
+                  setReviewEnabled(settingsReviewEnabled);
                   if (settingsGithubSync && settingsGithubRemote.trim()) {
                     await window.electronAPI?.settings.set('githubRemote', settingsGithubRemote.trim());
                   } else {

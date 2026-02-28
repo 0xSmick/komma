@@ -26,3 +26,15 @@ export interface BrowserFile {
   isDirectory: boolean;
   size?: number;
 }
+
+export interface ReviewComment {
+  id: string;
+  source: 'github' | 'google';
+  author: { name: string; avatar?: string; isMe: boolean };
+  body: string;
+  quotedText?: string;
+  createdAt: string;
+  status: 'open' | 'resolved';
+  threadId?: string;
+  inReplyToId?: string;
+}

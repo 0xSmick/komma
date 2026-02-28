@@ -27,6 +27,18 @@ interface HeaderProps {
   githubFileUrl?: string | null;
   onPushToGithub?: () => void;
   onDismissGithubPush?: () => void;
+  // Review workflow
+  reviewPrUrl?: string | null;
+  reviewPrNumber?: number | null;
+  reviewIsOnBranch?: boolean;
+  reviewStatus?: 'idle' | 'submitting' | 'pulling' | 'pushing' | 'done' | 'error';
+  reviewStatusMessage?: string | null;
+  reviewError?: string | null;
+  onSubmitForReview?: () => void;
+  onPullReviews?: () => void;
+  onPushReviewUpdate?: () => void;
+  onDismissReviewStatus?: () => void;
+  onOpenReviewUrl?: () => void;
 }
 
 export default function Header({
@@ -56,6 +68,17 @@ export default function Header({
   githubFileUrl,
   onPushToGithub,
   onDismissGithubPush,
+  reviewPrUrl,
+  reviewPrNumber,
+  reviewIsOnBranch,
+  reviewStatus = 'idle',
+  reviewStatusMessage,
+  reviewError,
+  onSubmitForReview,
+  onPullReviews,
+  onPushReviewUpdate,
+  onDismissReviewStatus,
+  onOpenReviewUrl,
 }: HeaderProps) {
   return (
     <header
@@ -151,25 +174,93 @@ export default function Header({
             )}
             {shareStatus === 'sharing' ? 'Sharing...' : 'Share'}
           </button>
-          {githubSyncEnabled && onPushToGithub && (
-            <button
-              onClick={onPushToGithub}
-              disabled={githubPushStatus === 'pushing'}
-              className="btn btn-ghost text-sm"
-              title="Push to GitHub"
-            >
-              {githubPushStatus === 'pushing' ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
-                  <circle cx="12" cy="12" r="10" opacity="0.25" />
-                  <path d="M12 2a10 10 0 0 1 10 10" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
-                </svg>
+          {/* GitHub: show Push OR Review buttons, never both */}
+          {reviewPrNumber ? (
+            <>
+              <button
+                onClick={onPullReviews}
+                disabled={reviewStatus === 'pulling'}
+                className="btn btn-ghost text-sm"
+                title="Pull review comments from GitHub"
+              >
+                {reviewStatus === 'pulling' ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                    <circle cx="12" cy="12" r="10" opacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="8 17 12 21 16 17" />
+                    <line x1="12" y1="12" x2="12" y2="21" />
+                    <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29" />
+                  </svg>
+                )}
+                {reviewStatus === 'pulling' ? 'Pulling...' : 'Pull Reviews'}
+              </button>
+              <button
+                onClick={onPushReviewUpdate}
+                disabled={reviewStatus === 'pushing'}
+                className="btn btn-ghost text-sm"
+                title="Push updates to review branch"
+              >
+                {reviewStatus === 'pushing' ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                    <circle cx="12" cy="12" r="10" opacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+                  </svg>
+                )}
+                {reviewStatus === 'pushing' ? 'Pushing...' : 'Push'}
+              </button>
+            </>
+          ) : (
+            <>
+              {githubSyncEnabled && onPushToGithub && (
+                <button
+                  onClick={onPushToGithub}
+                  disabled={githubPushStatus === 'pushing'}
+                  className="btn btn-ghost text-sm"
+                  title="Push to GitHub"
+                >
+                  {githubPushStatus === 'pushing' ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                      <circle cx="12" cy="12" r="10" opacity="0.25" />
+                      <path d="M12 2a10 10 0 0 1 10 10" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+                    </svg>
+                  )}
+                  {githubPushStatus === 'pushing' ? 'Pushing...' : 'Push'}
+                </button>
               )}
-              {githubPushStatus === 'pushing' ? 'Pushing...' : 'Push'}
-            </button>
+              {onSubmitForReview && (
+                <button
+                  onClick={onSubmitForReview}
+                  disabled={reviewStatus === 'submitting'}
+                  className="btn btn-ghost text-sm"
+                  title="Submit for review via GitHub PR"
+                >
+                  {reviewStatus === 'submitting' ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                      <circle cx="12" cy="12" r="10" opacity="0.25" />
+                      <path d="M12 2a10 10 0 0 1 10 10" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="18" cy="18" r="3" />
+                      <circle cx="6" cy="6" r="3" />
+                      <path d="M6 21V9a9 9 0 0 0 9 9" />
+                    </svg>
+                  )}
+                  {reviewStatus === 'submitting' ? 'Submitting...' : 'Review'}
+                </button>
+              )}
+            </>
           )}
           <button
             onClick={loadDocument}
@@ -424,6 +515,82 @@ export default function Header({
           {onDismissGithubPush && (
             <button
               onClick={onDismissGithubPush}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'rgba(255,255,255,0.7)',
+                cursor: 'pointer',
+                padding: '0 0 0 4px',
+                fontSize: '16px',
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Review toast */}
+      {(reviewStatus === 'done' || reviewStatus === 'error') && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            marginTop: '8px',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 100,
+            background: reviewStatus === 'done' ? 'var(--color-success)' : 'var(--color-danger, #ef4444)',
+            color: '#fff',
+            whiteSpace: 'nowrap' as const,
+          }}
+        >
+          {reviewStatus === 'done' ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span>{reviewStatusMessage || 'Done'}</span>
+              {reviewPrUrl && (
+                <button
+                  onClick={onOpenReviewUrl}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    color: '#fff',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                  }}
+                >
+                  Open PR
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+              <span>{reviewError || 'Review action failed'}</span>
+            </>
+          )}
+          {onDismissReviewStatus && (
+            <button
+              onClick={onDismissReviewStatus}
               style={{
                 background: 'none',
                 border: 'none',

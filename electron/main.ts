@@ -371,6 +371,33 @@ function gitExec(args: string[], cwd: string): Promise<string> {
   });
 }
 
+function ghExec(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('gh', args, { cwd, env: { ...process.env, GH_PROMPT_DISABLED: '1' } }, (err, stdout, stderr) => {
+      if (err) reject(new Error(stderr.trim() || err.message));
+      else resolve(stdout.trim());
+    });
+  });
+}
+
+/** Extract the last added line(s) from a diff hunk as quoted text */
+function extractQuotedText(diffHunk: string): string {
+  const lines = diffHunk.split('\n');
+  // Get the last few context/added lines (the ones the comment is on)
+  const relevantLines: string[] = [];
+  for (let i = lines.length - 1; i >= 0 && relevantLines.length < 3; i--) {
+    const line = lines[i];
+    if (line.startsWith('+') || line.startsWith(' ')) {
+      relevantLines.unshift(line.slice(1)); // Remove the +/space prefix
+    } else if (line.startsWith('-')) {
+      continue;
+    } else {
+      break;
+    }
+  }
+  return relevantLines.join('\n').trim();
+}
+
 function registerIpcHandlers() {
   ipcMain.handle('git:log', async (_event, filePath: string, limit = 50) => {
     try {
@@ -566,6 +593,285 @@ function registerIpcHandlers() {
       }
     } catch (err: any) {
       return { success: false, error: err.message || 'Failed to get remote info' };
+    }
+  });
+
+  ipcMain.handle('git:create-review', async (_event, filePath: string, title?: string) => {
+    try {
+      const dir = path.dirname(filePath);
+      let repoRoot: string;
+      const vRoot = resolveVaultRoot(filePath);
+      if (vRoot) {
+        try {
+          await gitExec(['-C', vRoot, 'rev-parse', '--show-toplevel'], vRoot);
+          repoRoot = vRoot;
+        } catch {
+          return { success: false, error: 'Vault directory is not a git repository' };
+        }
+      } else {
+        try {
+          repoRoot = await gitExec(['-C', dir, 'rev-parse', '--show-toplevel'], dir);
+        } catch {
+          return { success: false, error: 'Not a git repository' };
+        }
+      }
+
+      const relativePath = path.relative(repoRoot, filePath);
+      const slug = path.basename(filePath, path.extname(filePath))
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const branchName = `review/${slug}`;
+      const prTitle = title || `Review: ${path.basename(filePath, path.extname(filePath))}`;
+
+      // Determine the base branch (what the PR merges into)
+      const currentBranch = await gitExec(['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
+      let baseBranch: string;
+      if (currentBranch.startsWith('review/')) {
+        // Already on a review branch — find the default branch
+        try {
+          const remoteHead = await gitExec(['-C', repoRoot, 'symbolic-ref', 'refs/remotes/origin/HEAD', '--short'], repoRoot);
+          baseBranch = remoteHead.replace(/^origin\//, '');
+        } catch {
+          baseBranch = 'main'; // fallback
+        }
+      } else {
+        baseBranch = currentBranch;
+      }
+
+      // Create and switch to review branch (or stay if already on it)
+      if (currentBranch !== branchName) {
+        try {
+          await gitExec(['-C', repoRoot, 'checkout', '-b', branchName], repoRoot);
+        } catch {
+          // Branch might already exist, switch to it
+          await gitExec(['-C', repoRoot, 'checkout', branchName], repoRoot);
+        }
+      }
+
+      // Stage and commit
+      await gitExec(['-C', repoRoot, 'add', relativePath], repoRoot);
+      let hasChanges = false;
+      try {
+        await gitExec(['-C', repoRoot, 'diff', '--cached', '--quiet'], repoRoot);
+      } catch {
+        hasChanges = true;
+      }
+      if (hasChanges) {
+        await gitExec(['-C', repoRoot, 'commit', '-m', `Submit for review: ${path.basename(filePath)}`], repoRoot);
+      }
+
+      // Push the branch
+      const settings = readSettings();
+      const remote = settings.githubRemote || 'origin';
+      await gitExec(['-C', repoRoot, 'push', '-u', remote, branchName], repoRoot);
+
+      // Create PR via gh CLI
+      let prNumber: number | undefined;
+      let prUrl: string | undefined;
+      try {
+        // gh pr create outputs the PR URL on success
+        const prOutput = await ghExec([
+          'pr', 'create',
+          '--title', prTitle,
+          '--body', `Submitted for review from komma.\n\nFile: \`${relativePath}\``,
+          '--head', branchName,
+          '--base', baseBranch,
+        ], repoRoot);
+        // Output is the PR URL, e.g. https://github.com/user/repo/pull/123
+        prUrl = prOutput.trim();
+        const numMatch = prUrl.match(/\/pull\/(\d+)$/);
+        if (numMatch) prNumber = parseInt(numMatch[1], 10);
+      } catch (prErr: any) {
+        // PR might already exist — check for it
+        try {
+          const existing = await ghExec([
+            'pr', 'list', '--head', branchName, '--json', 'number,url', '--limit', '1'
+          ], repoRoot);
+          const list = JSON.parse(existing);
+          if (list.length > 0) {
+            prNumber = list[0].number;
+            prUrl = list[0].url;
+          }
+        } catch { /* ignore */ }
+        if (!prUrl) {
+          return { success: false, error: prErr.message || 'Failed to create PR' };
+        }
+      }
+
+      return { success: true, branchName, prNumber, prUrl };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to create review' };
+    }
+  });
+
+  ipcMain.handle('git:pr-comments', async (_event, filePath: string, prNumber: number) => {
+    try {
+      const dir = path.dirname(filePath);
+      let repoRoot: string;
+      const vRoot = resolveVaultRoot(filePath);
+      if (vRoot) {
+        try {
+          await gitExec(['-C', vRoot, 'rev-parse', '--show-toplevel'], vRoot);
+          repoRoot = vRoot;
+        } catch {
+          return { success: false, error: 'Not a git repository' };
+        }
+      } else {
+        try {
+          repoRoot = await gitExec(['-C', dir, 'rev-parse', '--show-toplevel'], dir);
+        } catch {
+          return { success: false, error: 'Not a git repository' };
+        }
+      }
+
+      // Fetch PR review comments (inline/diff comments)
+      const reviewCommentsJson = await ghExec([
+        'api', `repos/{owner}/{repo}/pulls/${prNumber}/comments`,
+        '--jq', '.',
+      ], repoRoot);
+      const reviewComments = JSON.parse(reviewCommentsJson || '[]');
+
+      // Fetch issue comments (general PR comments)
+      const issueCommentsJson = await ghExec([
+        'api', `repos/{owner}/{repo}/issues/${prNumber}/comments`,
+        '--jq', '.',
+      ], repoRoot);
+      const issueComments = JSON.parse(issueCommentsJson || '[]');
+
+      // Get current user for isMe detection
+      let currentUser = '';
+      try {
+        const userJson = await ghExec(['api', 'user', '--jq', '.login'], repoRoot);
+        currentUser = userJson;
+      } catch { /* ignore */ }
+
+      // Transform review comments
+      const comments = [
+        ...reviewComments.map((c: any) => ({
+          id: String(c.id),
+          source: 'github' as const,
+          author: {
+            name: c.user?.login || 'unknown',
+            avatar: c.user?.avatar_url,
+            isMe: c.user?.login === currentUser,
+          },
+          body: c.body,
+          quotedText: c.diff_hunk ? extractQuotedText(c.diff_hunk) : undefined,
+          createdAt: c.created_at,
+          status: 'open' as const,
+          threadId: String(c.pull_request_review_id || c.id),
+          inReplyToId: c.in_reply_to_id ? String(c.in_reply_to_id) : undefined,
+        })),
+        ...issueComments.map((c: any) => ({
+          id: `issue-${c.id}`,
+          source: 'github' as const,
+          author: {
+            name: c.user?.login || 'unknown',
+            avatar: c.user?.avatar_url,
+            isMe: c.user?.login === currentUser,
+          },
+          body: c.body,
+          createdAt: c.created_at,
+          status: 'open' as const,
+        })),
+      ];
+
+      // Sort by date
+      comments.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      return { success: true, comments };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to fetch PR comments' };
+    }
+  });
+
+  ipcMain.handle('git:pr-status', async (_event, filePath: string) => {
+    try {
+      const dir = path.dirname(filePath);
+      let repoRoot: string;
+      const vRoot = resolveVaultRoot(filePath);
+      if (vRoot) {
+        try {
+          await gitExec(['-C', vRoot, 'rev-parse', '--show-toplevel'], vRoot);
+          repoRoot = vRoot;
+        } catch {
+          return { success: true, pr: null };
+        }
+      } else {
+        try {
+          repoRoot = await gitExec(['-C', dir, 'rev-parse', '--show-toplevel'], dir);
+        } catch {
+          return { success: true, pr: null };
+        }
+      }
+
+      // Check current branch
+      const branch = await gitExec(['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
+
+      // Look for open PRs from current branch
+      try {
+        const prListJson = await ghExec([
+          'pr', 'list',
+          '--head', branch,
+          '--state', 'open',
+          '--json', 'number,title,state,url',
+          '--limit', '1',
+        ], repoRoot);
+        const prs = JSON.parse(prListJson || '[]');
+        if (prs.length > 0) {
+          return { success: true, pr: prs[0], branch };
+        }
+      } catch { /* no gh or no remote */ }
+
+      return { success: true, pr: null, branch };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to check PR status' };
+    }
+  });
+
+  ipcMain.handle('git:push-review-update', async (_event, filePath: string, message?: string) => {
+    try {
+      const dir = path.dirname(filePath);
+      let repoRoot: string;
+      const vRoot = resolveVaultRoot(filePath);
+      if (vRoot) {
+        try {
+          await gitExec(['-C', vRoot, 'rev-parse', '--show-toplevel'], vRoot);
+          repoRoot = vRoot;
+        } catch {
+          return { success: false, error: 'Not a git repository' };
+        }
+      } else {
+        try {
+          repoRoot = await gitExec(['-C', dir, 'rev-parse', '--show-toplevel'], dir);
+        } catch {
+          return { success: false, error: 'Not a git repository' };
+        }
+      }
+
+      const relativePath = path.relative(repoRoot, filePath);
+      const settings = readSettings();
+      const remote = settings.githubRemote || 'origin';
+      const branch = await gitExec(['-C', repoRoot, 'rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
+
+      // Stage, commit, push
+      await gitExec(['-C', repoRoot, 'add', relativePath], repoRoot);
+      let hasChanges = false;
+      try {
+        await gitExec(['-C', repoRoot, 'diff', '--cached', '--quiet'], repoRoot);
+      } catch {
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        const commitMsg = message || `Address review feedback: ${path.basename(filePath)}`;
+        await gitExec(['-C', repoRoot, 'commit', '-m', commitMsg], repoRoot);
+      }
+
+      await gitExec(['-C', repoRoot, 'push', remote, branch], repoRoot);
+
+      return { success: true, branch };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to push update' };
     }
   });
 

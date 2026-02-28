@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Comment, ChangelogEntry } from '../../types';
+import { Comment, ChangelogEntry, ReviewComment } from '../../types';
 
 interface EditsTabProps {
   // From CommentsTab
@@ -35,6 +35,8 @@ interface EditsTabProps {
   setExpandedEntryId: (id: number | null) => void;
   onClearChangelogs: () => void;
   onNavigateToComment?: (comment: Comment) => void;
+  reviewComments?: ReviewComment[];
+  onSendReviewToClaude?: (comment: ReviewComment) => void;
 }
 
 export default function EditsTab({
@@ -66,6 +68,8 @@ export default function EditsTab({
   expandedEntryId,
   setExpandedEntryId,
   onClearChangelogs,
+  reviewComments,
+  onSendReviewToClaude,
 }: EditsTabProps) {
   const pendingComments = comments.filter(c => c.status === 'pending');
   const appliedComments = comments.filter(c => c.status === 'applied');
@@ -96,6 +100,94 @@ export default function EditsTab({
 
   return (
     <div className="space-y-4">
+      {/* Review comments from GitHub */}
+      {reviewComments && reviewComments.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-accent)' }}>
+              Review Comments
+            </span>
+            <span className="text-xs" style={{ color: 'var(--color-ink-faded)' }}>
+              {reviewComments.length} comment{reviewComments.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {reviewComments.filter(c => !c.inReplyToId).map((comment) => {
+              const replies = reviewComments.filter(r => r.threadId === comment.threadId && r.id !== comment.id);
+              return (
+                <div
+                  key={comment.id}
+                  className="p-3 rounded-lg"
+                  style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+                >
+                  {/* Author + time */}
+                  <div className="flex items-center gap-2 mb-1.5">
+                    {comment.author.avatar && (
+                      <img
+                        src={comment.author.avatar}
+                        alt={comment.author.name}
+                        className="w-4 h-4 rounded-full"
+                      />
+                    )}
+                    <span className="text-xs font-medium" style={{ color: 'var(--color-ink)' }}>
+                      {comment.author.name}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--color-ink-faded)' }}>
+                      {new Date(comment.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                  </div>
+                  {/* Quoted text */}
+                  {comment.quotedText && (
+                    <div
+                      className="text-xs mb-1.5 truncate px-2 py-0.5 rounded"
+                      style={{ background: 'var(--color-highlight)', color: 'var(--color-ink)', fontFamily: 'var(--font-serif)' }}
+                      title={comment.quotedText}
+                    >
+                      &ldquo;{comment.quotedText.length > 80 ? comment.quotedText.slice(0, 80) + '...' : comment.quotedText}&rdquo;
+                    </div>
+                  )}
+                  {/* Comment body */}
+                  <p className="text-xs mb-2" style={{ color: 'var(--color-ink)', lineHeight: 1.5 }}>
+                    {comment.body}
+                  </p>
+                  {/* Replies */}
+                  {replies.length > 0 && (
+                    <div className="ml-3 pl-2 space-y-1.5 mb-2" style={{ borderLeft: '2px solid var(--color-border)' }}>
+                      {replies.map(reply => (
+                        <div key={reply.id}>
+                          <span className="text-xs font-medium" style={{ color: 'var(--color-ink-faded)' }}>
+                            {reply.author.name}:
+                          </span>
+                          <span className="text-xs ml-1" style={{ color: 'var(--color-ink)' }}>
+                            {reply.body}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Send to Claude action */}
+                  {onSendReviewToClaude && !comment.author.isMe && (
+                    <button
+                      onClick={() => onSendReviewToClaude(comment)}
+                      className="text-xs flex items-center gap-1 transition-colors"
+                      style={{ color: 'var(--color-accent)' }}
+                      onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+                      onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                      Send to Claude
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 1. Applied changes review (from CommentsTab) */}
       {appliedComments.length > 0 && (
         <div>

@@ -60,6 +60,20 @@ declare global {
         show(filePath: string, sha: string): Promise<{ success: boolean; content?: string; error?: string }>;
         push(filePath: string, message?: string): Promise<{ success: boolean; error?: string; sha?: string; remote?: string; branch?: string; fileUrl?: string }>;
         remoteInfo(filePath: string): Promise<{ success: boolean; remoteUrl?: string | null; remoteName?: string | null; branch?: string | null; error?: string }>;
+        createReview(filePath: string, title?: string): Promise<{ success: boolean; error?: string; branchName?: string; prNumber?: number; prUrl?: string }>;
+        prComments(filePath: string, prNumber: number): Promise<{ success: boolean; error?: string; comments?: Array<{
+          id: string;
+          source: 'github';
+          author: { name: string; avatar?: string; isMe: boolean };
+          body: string;
+          quotedText?: string;
+          createdAt: string;
+          status: 'open' | 'resolved';
+          threadId?: string;
+          inReplyToId?: string;
+        }> }>;
+        prStatus(filePath: string): Promise<{ success: boolean; error?: string; pr?: { number: number; title: string; state: string; url: string } | null; branch?: string }>;
+        pushReviewUpdate(filePath: string, message?: string): Promise<{ success: boolean; error?: string; branch?: string }>;
       };
       templates: {
         listCustom(): Promise<Array<{

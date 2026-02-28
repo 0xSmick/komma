@@ -88,6 +88,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     remoteInfo(filePath: string): Promise<{ success: boolean; remoteUrl?: string | null; remoteName?: string | null; branch?: string | null; error?: string }> {
       return ipcRenderer.invoke('git:remote-info', filePath);
     },
+    createReview(filePath: string, title?: string): Promise<{ success: boolean; error?: string; branchName?: string; prNumber?: number; prUrl?: string }> {
+      return ipcRenderer.invoke('git:create-review', filePath, title);
+    },
+    prComments(filePath: string, prNumber: number): Promise<{ success: boolean; error?: string; comments?: any[] }> {
+      return ipcRenderer.invoke('git:pr-comments', filePath, prNumber);
+    },
+    prStatus(filePath: string): Promise<{ success: boolean; error?: string; pr?: { number: number; title: string; state: string; url: string } | null; branch?: string }> {
+      return ipcRenderer.invoke('git:pr-status', filePath);
+    },
+    pushReviewUpdate(filePath: string, message?: string): Promise<{ success: boolean; error?: string; branch?: string }> {
+      return ipcRenderer.invoke('git:push-review-update', filePath, message);
+    },
   },
   templates: {
     listCustom(): Promise<any[]> {
