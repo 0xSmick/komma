@@ -11,14 +11,21 @@ const srcApp = path.join(distDir, 'Electron.app');
 const destApp = path.join(distDir, 'Komma.app');
 
 // Rename bundle (the definitive fix for macOS Cmd+Tab name)
+// Handle any previous name (Electron.app, Helm.app, etc.)
 if (fs.existsSync(srcApp)) {
   fs.renameSync(srcApp, destApp);
+} else if (!fs.existsSync(destApp)) {
+  // Find any .app that isn't Komma.app and rename it
+  const apps = fs.readdirSync(distDir).filter(f => f.endsWith('.app') && f !== 'Komma.app');
+  if (apps.length > 0) {
+    fs.renameSync(path.join(distDir, apps[0]), destApp);
+  }
 }
 
 if (!fs.existsSync(destApp)) process.exit(0);
 
 // Update path.txt so the electron package finds the renamed bundle
-fs.writeFileSync(path.join(electronDir, 'path.txt'), 'Komma.app/Contents/MacOS/Electron');
+fs.writeFileSync(path.join(electronDir, 'path.txt'), 'Komma.app/Contents/MacOS/Electron', { encoding: 'utf-8' });
 
 // Patch Info.plist
 const plist = path.join(destApp, 'Contents', 'Info.plist');

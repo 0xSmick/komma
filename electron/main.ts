@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as http from 'http';
 import * as net from 'net';
 import { spawnClaude } from './claude';
-import { uploadHtmlAsGoogleDoc, updateGoogleDoc, clearTokens, getExistingDoc, fetchDocComments, exportDocAsText, getPulledCommentIds, markCommentsPulled } from './google-auth';
+import { uploadHtmlAsGoogleDoc, updateGoogleDoc, clearTokens, getExistingDoc, fetchDocComments, exportDocAsText, getPulledCommentIds, markCommentsPulled, isGoogleOAuthConfigured, resetGoogleCredsCache } from './google-auth';
 import { marked } from 'marked';
 
 const SETTINGS_PATH = path.join(os.homedir(), '.komma', 'config.json');
@@ -118,10 +118,17 @@ async function startNextServer(port: number): Promise<void> {
     : path.join(__dirname, '..');
 
   if (app.isPackaged) {
-    // Production: use ELECTRON_RUN_AS_NODE so the Electron binary acts as Node.
-    // This avoids requiring a separate system Node installation.
+    // Production: use the Electron Helper binary with ELECTRON_RUN_AS_NODE.
+    // The Helper has LSUIElement=true so it won't show a dock icon,
+    // unlike spawning the main binary which creates a visible "exec" entry.
     const standaloneDir = path.join(projectRoot, '.next', 'standalone');
-    nextServer = spawn(process.execPath, ['server.js'], {
+    const contentsDir = path.dirname(process.resourcesPath);
+    const appName = path.basename(process.execPath);
+    const helperBinary = path.join(
+      contentsDir, 'Frameworks', `${appName} Helper.app`, 'Contents', 'MacOS', `${appName} Helper`
+    );
+    const serverBinary = fs.existsSync(helperBinary) ? helperBinary : process.execPath;
+    nextServer = spawn(serverBinary, ['server.js'], {
       env: {
         ...process.env,
         PORT: String(port),
@@ -471,7 +478,19 @@ function registerIpcHandlers() {
       // Push
       await gitExec(['-C', repoRoot, 'push', remote, branch], repoRoot);
 
-      return { success: true, sha, remote, branch };
+      // Build GitHub web URL for the file
+      let fileUrl: string | undefined;
+      try {
+        const remoteUrl = await gitExec(['-C', repoRoot, 'remote', 'get-url', remote], repoRoot);
+        // Convert git@github.com:user/repo.git or https://github.com/user/repo.git to https://github.com/user/repo
+        const webUrl = remoteUrl
+          .replace(/\.git$/, '')
+          .replace(/^git@github\.com:/, 'https://github.com/')
+          .replace(/^ssh:\/\/git@github\.com\//, 'https://github.com/');
+        fileUrl = `${webUrl}/blob/${branch}/${relativePath}`;
+      } catch { /* remote URL parsing failed, skip */ }
+
+      return { success: true, sha, remote, branch, fileUrl };
     } catch (err: any) {
       return { success: false, error: err.message || 'Git push failed' };
     }
@@ -1261,6 +1280,29 @@ th { background-color: #f0f0f0; font-weight: bold; }
 
   ipcMain.handle('google:sign-out', async () => {
     clearTokens();
+  });
+
+  ipcMain.handle('google:check-configured', async () => {
+    return isGoogleOAuthConfigured();
+  });
+
+  ipcMain.handle('google:save-credentials', async (_event, clientId: string, clientSecret: string) => {
+    const oauthPath = path.join(os.homedir(), '.komma', 'google-oauth.json');
+    const dir = path.dirname(oauthPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(oauthPath, JSON.stringify({ clientId, clientSecret }, null, 2));
+    resetGoogleCredsCache();
+    return isGoogleOAuthConfigured();
+  });
+
+  ipcMain.handle('google:load-credentials', async () => {
+    try {
+      const oauthPath = path.join(os.homedir(), '.komma', 'google-oauth.json');
+      const config = JSON.parse(fs.readFileSync(oauthPath, 'utf-8'));
+      return { clientId: config.clientId || '', clientSecret: config.clientSecret || '' };
+    } catch {
+      return { clientId: '', clientSecret: '' };
+    }
   });
 }
 

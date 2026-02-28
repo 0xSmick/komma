@@ -45,6 +45,9 @@ declare global {
         shareDoc(markdown: string, title: string, docPath: string, action?: 'new' | 'update'): Promise<{ success: boolean; url?: string; error?: string }>;
         openUrl(url: string): Promise<void>;
         signOut(): Promise<void>;
+        checkConfigured(): Promise<boolean>;
+        saveCredentials(clientId: string, clientSecret: string): Promise<boolean>;
+        loadCredentials(): Promise<{ clientId: string; clientSecret: string }>;
         pullDoc(localPath: string): Promise<{
           comments: Array<{ googleId: string; selectedText: string; comment: string; createdTime: string }>;
           remoteText: string;
@@ -54,7 +57,7 @@ declare global {
         commit(filePath: string, message: string): Promise<{ success: boolean; error?: string; sha?: string; skipped?: boolean; noChanges?: boolean }>;
         log(filePath: string, limit?: number): Promise<{ success: boolean; commits?: GitCommit[]; error?: string }>;
         show(filePath: string, sha: string): Promise<{ success: boolean; content?: string; error?: string }>;
-        push(filePath: string, message?: string): Promise<{ success: boolean; error?: string; sha?: string; remote?: string; branch?: string }>;
+        push(filePath: string, message?: string): Promise<{ success: boolean; error?: string; sha?: string; remote?: string; branch?: string; fileUrl?: string }>;
         remoteInfo(filePath: string): Promise<{ success: boolean; remoteUrl?: string | null; remoteName?: string | null; branch?: string | null; error?: string }>;
       };
       claude: {

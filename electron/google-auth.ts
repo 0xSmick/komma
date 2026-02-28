@@ -8,6 +8,18 @@ import * as path from 'path';
 // Google OAuth credentials — loaded from env vars or ~/.komma/google-oauth.json
 // See SETUP.md for how to obtain your own credentials
 let _googleCreds: { clientId: string; clientSecret: string } | null = null;
+
+/** Check whether Google OAuth credentials are configured (non-empty). */
+export function isGoogleOAuthConfigured(): boolean {
+  const creds = getGoogleCreds();
+  return !!(creds.clientId && creds.clientSecret);
+}
+
+/** Reset cached credentials so they are re-read from disk on next use. */
+export function resetGoogleCredsCache(): void {
+  _googleCreds = null;
+}
+
 function getGoogleCreds() {
   if (_googleCreds) return _googleCreds;
   // 1. Environment variables
@@ -180,6 +192,10 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenData> {
 // --- OAuth2 PKCE flow ---
 
 export function startOAuthFlow(): Promise<TokenData> {
+  const creds = getGoogleCreds();
+  if (!creds.clientId || !creds.clientSecret) {
+    return Promise.reject(new Error('Google OAuth not configured. Set KOMMA_GOOGLE_CLIENT_ID/SECRET or create ~/.komma/google-oauth.json'));
+  }
   return new Promise((resolve, reject) => {
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);

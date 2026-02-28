@@ -56,6 +56,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     signOut(): Promise<void> {
       return ipcRenderer.invoke('google:sign-out');
     },
+    checkConfigured(): Promise<boolean> {
+      return ipcRenderer.invoke('google:check-configured');
+    },
+    saveCredentials(clientId: string, clientSecret: string): Promise<boolean> {
+      return ipcRenderer.invoke('google:save-credentials', clientId, clientSecret);
+    },
+    loadCredentials(): Promise<{ clientId: string; clientSecret: string }> {
+      return ipcRenderer.invoke('google:load-credentials');
+    },
     pullDoc(localPath: string): Promise<{
       comments: Array<{ googleId: string; selectedText: string; comment: string; createdTime: string }>;
       remoteText: string;

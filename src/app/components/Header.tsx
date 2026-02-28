@@ -24,6 +24,7 @@ interface HeaderProps {
   githubSyncEnabled?: boolean;
   githubPushStatus?: 'idle' | 'pushing' | 'done' | 'error';
   githubPushError?: string | null;
+  githubFileUrl?: string | null;
   onPushToGithub?: () => void;
   onDismissGithubPush?: () => void;
 }
@@ -52,6 +53,7 @@ export default function Header({
   githubSyncEnabled,
   githubPushStatus = 'idle',
   githubPushError,
+  githubFileUrl,
   onPushToGithub,
   onDismissGithubPush,
 }: HeaderProps) {
@@ -399,6 +401,23 @@ export default function Header({
                 <polyline points="20 6 9 17 4 12" />
               </svg>
               <span>Pushed to GitHub</span>
+              {githubFileUrl && (
+                <button
+                  onClick={() => { navigator.clipboard.writeText(githubFileUrl); }}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: 'none',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                  }}
+                >
+                  Copy Link
+                </button>
+              )}
             </>
           ) : (
             <>

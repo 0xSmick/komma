@@ -95,8 +95,11 @@ export default function Home() {
   const [githubSyncEnabled, setGithubSyncEnabled] = useState(false);
   const [githubPushStatus, setGithubPushStatus] = useState<'idle' | 'pushing' | 'done' | 'error'>('idle');
   const [githubPushError, setGithubPushError] = useState<string | null>(null);
+  const [githubFileUrl, setGithubFileUrl] = useState<string | null>(null);
   const [settingsGithubSync, setSettingsGithubSync] = useState(false);
   const [settingsGithubRemote, setSettingsGithubRemote] = useState('');
+  const [settingsGoogleClientId, setSettingsGoogleClientId] = useState('');
+  const [settingsGoogleClientSecret, setSettingsGoogleClientSecret] = useState('');
 
   // Split pane state
   const [splitTabIndex, setSplitTabIndex] = useState<number | null>(null);
@@ -1210,6 +1213,18 @@ export default function Home() {
     const api = window.electronAPI;
     if (!api?.google) return;
 
+    // Check if Google OAuth is configured before attempting to share
+    try {
+      const configured = await api.google.checkConfigured();
+      if (!configured) {
+        setShareStatus('error');
+        setShareError('Set up Google OAuth in Settings to enable sharing');
+        return;
+      }
+    } catch {
+      // If check fails, proceed and let the OAuth flow handle it
+    }
+
     // If no action specified, check for existing doc first
     if (!action) {
       try {
@@ -1283,6 +1298,7 @@ export default function Home() {
       const result = await api.git.push(doc.filePath);
       if (result.success) {
         setGithubPushStatus('done');
+        setGithubFileUrl(result.fileUrl || null);
       } else {
         setGithubPushStatus('error');
         setGithubPushError(result.error || 'Push failed');
@@ -1639,14 +1655,18 @@ export default function Home() {
         githubSyncEnabled={githubSyncEnabled}
         githubPushStatus={githubPushStatus}
         githubPushError={githubPushError}
+        githubFileUrl={githubFileUrl}
         onPushToGithub={handlePushToGithub}
-        onDismissGithubPush={() => { setGithubPushStatus('idle'); setGithubPushError(null); }}
+        onDismissGithubPush={() => { setGithubPushStatus('idle'); setGithubPushError(null); setGithubFileUrl(null); }}
         onOpenSettings={async () => {
           try {
             const settings = await window.electronAPI?.settings.get();
             setSettingsVaultRoot(settings?.vaultRoot || '');
             setSettingsGithubSync(!!settings?.githubAutoSync);
             setSettingsGithubRemote(settings?.githubRemote || '');
+            const creds = await window.electronAPI?.google.loadCredentials();
+            setSettingsGoogleClientId(creds?.clientId || '');
+            setSettingsGoogleClientSecret(creds?.clientSecret || '');
           } catch { setSettingsVaultRoot(''); }
           setShowSettings(true);
         }}
@@ -2350,6 +2370,8 @@ export default function Home() {
               padding: '24px',
               width: '480px',
               maxWidth: '90vw',
+              maxHeight: '85vh',
+              overflowY: 'auto',
               boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
               border: '1px solid var(--color-border)',
               fontFamily: 'var(--font-sans)',
@@ -2438,6 +2460,70 @@ export default function Home() {
                 </>
               )}
             </div>
+            {/* Google Docs */}
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '16px', marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: 'var(--color-ink)', marginBottom: '6px' }}>
+                Google Docs
+              </label>
+              <p style={{ fontSize: '12px', color: 'var(--color-ink-faded)', margin: '0 0 10px' }}>
+                Requires Google Cloud OAuth credentials to enable sharing.{' '}
+                <a
+                  href="https://console.cloud.google.com/apis/credentials"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--color-accent)' }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.electronAPI?.google.openUrl('https://console.cloud.google.com/apis/credentials');
+                  }}
+                >
+                  Google Cloud Console
+                </a>
+              </p>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-ink)', marginBottom: '4px' }}>
+                Client ID
+              </label>
+              <input
+                type="text"
+                value={settingsGoogleClientId}
+                onChange={(e) => setSettingsGoogleClientId(e.target.value)}
+                placeholder="your-app.apps.googleusercontent.com"
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '13px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-paper)',
+                  color: 'var(--color-ink)',
+                  outline: 'none',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  boxSizing: 'border-box',
+                  marginBottom: '10px',
+                }}
+              />
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: 'var(--color-ink)', marginBottom: '4px' }}>
+                Client Secret
+              </label>
+              <input
+                type="password"
+                value={settingsGoogleClientSecret}
+                onChange={(e) => setSettingsGoogleClientSecret(e.target.value)}
+                placeholder="GOCSPX-..."
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  fontSize: '13px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-paper)',
+                  color: 'var(--color-ink)',
+                  outline: 'none',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowSettings(false)}
@@ -2474,6 +2560,11 @@ export default function Home() {
                   } else {
                     await window.electronAPI?.settings.set('githubRemote', '');
                   }
+                  // Save Google OAuth credentials
+                  await window.electronAPI?.google.saveCredentials(
+                    settingsGoogleClientId.trim(),
+                    settingsGoogleClientSecret.trim(),
+                  );
                   setShowSettings(false);
                 }}
                 style={{
