@@ -7,7 +7,8 @@ let db: Database.Database | null = null;
 export function getDb(): Database.Database {
   if (db) return db;
 
-  const dataDir = path.join(process.cwd(), 'data');
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+  const dataDir = homeDir ? path.join(homeDir, '.komma') : path.join(process.cwd(), 'data');
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }

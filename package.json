@@ -10,7 +10,7 @@
     "lint": "eslint",
     "build:electron": "tsc -p tsconfig.electron.json",
     "electron:dev": "npm run build:electron && electron .",
-    "electron:build": "next build && npm run build:electron && electron-builder",
+    "electron:build": "next build && node -e \"const fs=require('fs'),p=require('path'),src=p.join('node_modules/next/dist/compiled/next-server'),dst=p.join('.next/standalone/node_modules/next/dist/compiled/next-server');fs.readdirSync(src).filter(f=>f.includes('app-route')).forEach(f=>{try{fs.copyFileSync(p.join(src,f),p.join(dst,f))}catch{}})\" && npm run build:electron && electron-builder",
     "dist": "npm run electron:build",
     "postinstall": "node scripts/patch-electron.js || true"
   },
@@ -53,6 +53,7 @@
     "files": [
       "dist-electron/**/*",
       "!node_modules",
+      "node_modules/marked/**",
       "!src",
       "!electron"
     ],
@@ -63,11 +64,11 @@
       },
       {
         "from": ".next/static",
-        "to": "app/.next/static"
+        "to": "app/.next/standalone/.next/static"
       },
       {
         "from": "public",
-        "to": "app/public"
+        "to": "app/.next/standalone/public"
       }
     ],
     "asar": true,

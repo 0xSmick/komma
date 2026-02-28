@@ -119,10 +119,12 @@ async function startNextServer(port: number): Promise<void> {
 
   if (app.isPackaged) {
     // Production: use Next.js standalone server
-    const serverPath = path.join(projectRoot, '.next', 'standalone', 'server.js');
+    // ELECTRON_RUN_AS_NODE makes the Electron binary behave as plain Node.js
+    const standaloneDir = path.join(projectRoot, '.next', 'standalone');
+    const serverPath = path.join(standaloneDir, 'server.js');
     nextServer = spawn(process.execPath, [serverPath], {
-      env: { ...process.env, PORT: String(port), NODE_ENV: 'production' },
-      cwd: projectRoot,
+      env: { ...process.env, PORT: String(port), NODE_ENV: 'production', ELECTRON_RUN_AS_NODE: '1' },
+      cwd: standaloneDir,
       stdio: 'pipe',
     });
   } else {
