@@ -67,19 +67,11 @@ export default function Header({
     >
       <div className="px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <img
-              src={theme === 'dark' ? '/logo-dark.svg' : '/logo-light.svg'}
-              alt="komma"
-              className="w-7 h-7 rounded-md"
-            />
-            <h1
-              className="text-sm font-semibold tracking-tight"
-              style={{ color: 'var(--color-ink)', fontFamily: 'var(--font-sans)' }}
-            >
-              komma
-            </h1>
-          </div>
+          <img
+            src={theme === 'dark' ? '/logo-dark.svg' : '/logo-light.svg'}
+            alt="komma"
+            className="w-7 h-7 rounded-md"
+          />
           <div className="flex items-center gap-1">
             <button
               onClick={onNewDocument}

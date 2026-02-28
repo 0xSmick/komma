@@ -224,6 +224,9 @@ export function useDocument() {
 
       let contentToSave = turndownService.current().turndown(html);
 
+      // Strip zero-width joiners used for highlight rendering
+      contentToSave = contentToSave.replace(/\u200d/g, '');
+
       // Re-prepend original frontmatter if it existed
       if (rawFrontmatterRef.current) {
         contentToSave = rawFrontmatterRef.current + contentToSave;

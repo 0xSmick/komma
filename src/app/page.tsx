@@ -952,6 +952,13 @@ export default function Home() {
         return;
       }
 
+      // Enter without modifiers: enter edit mode when vim is off
+      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !vim.enabled && !doc.isEditMode && !doc.isHtml) {
+        e.preventDefault();
+        toggleEditMode();
+        return;
+      }
+
       // Delegate all non-meta vim keys to useVim (skip for HTML files)
       if (!doc.isHtml) vim.handleKeyDown(e);
     };
@@ -1531,9 +1538,45 @@ export default function Home() {
     return md.replace(/\[\[([^\]]+)\]\]/g, '<a class="wiki-link" data-wiki="$1" href="#">$1</a>');
   }, []);
 
-  // Pre-process ==highlighted text== into <mark> tags before rendering
+  // Pre-process ==highlighted text== into <mark> tags before rendering.
+  // Skips front matter, fenced code blocks, and inline code spans.
   const processHighlights = useCallback((md: string): string => {
-    return md.replace(/==([^=\n]+)==/g, '<mark>$1</mark>');
+    const lines = md.split('\n');
+    let inFrontMatter = false;
+    let inCodeBlock = false;
+    const result: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Track front matter (--- delimited, must start at line 0)
+      if (i === 0 && line.trim() === '---') { inFrontMatter = true; result.push(line); continue; }
+      if (inFrontMatter) {
+        if (line.trim() === '---') inFrontMatter = false;
+        result.push(line);
+        continue;
+      }
+
+      // Track fenced code blocks (``` or ~~~)
+      if (/^(`{3,}|~{3,})/.test(line)) { inCodeBlock = !inCodeBlock; result.push(line); continue; }
+      if (inCodeBlock) { result.push(line); continue; }
+
+      // Replace ==text== but skip inside inline code spans
+      // Split by backtick-delimited code spans, only transform non-code segments
+      const segments = line.split(/(`[^`]*`)/g);
+      const transformed = segments.map((seg, j) => {
+        // Odd indices are code spans (inside backticks) — leave alone
+        if (j % 2 === 1) return seg;
+        return seg.replace(/==([\s\S]+?)==/g, (match, content) => {
+          return `<mark>${content}</mark>`;
+        });
+      }).join('');
+
+      // If <mark> starts the line, prepend zero-width joiner so markdown
+      // treats it as inline HTML, not a block-level HTML element
+      result.push(transformed.startsWith('<mark>') ? `\u200d${transformed}` : transformed);
+    }
+    return result.join('\n');
   }, []);
 
   const articleRef = useRef<HTMLElement>(null);
