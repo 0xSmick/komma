@@ -26,6 +26,7 @@ import CommentTooltip from './components/CommentTooltip';
 import CommentDrawer from './components/CommentDrawer';
 import FileBrowser from './components/FileBrowser';
 import NewDocumentModal from './components/NewDocumentModal';
+import QuickCaptureModal from './components/QuickCaptureModal';
 import DocumentInfo from './components/DocumentInfo';
 import SearchBar from './components/SearchBar';
 import InlineDiffView from './components/InlineDiffView';
@@ -66,6 +67,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'toc' | 'edits' | 'chat' | 'history'>('edits');
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [showNewDocModal, setShowNewDocModal] = useState(false);
+  const [showQuickCapture, setShowQuickCapture] = useState(false);
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showFileExplorer, setShowFileExplorer] = useState(false);
@@ -932,6 +934,8 @@ export default function Home() {
       if (e.key === 'Escape') {
         if (showSearch) {
           closeSearch();
+        } else if (showQuickCapture) {
+          setShowQuickCapture(false);
         } else if (showNewDocModal) {
           setShowNewDocModal(false);
         } else if (showFileBrowser) {
@@ -953,7 +957,7 @@ export default function Home() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [doc.isEditMode, doc.isHtml, toggleEditMode, saveDocument, activeTabIndex, tabs.length, tabs, handleCloseTab, handleSelectTab, activeTab, comments, claude.isSending, claude.sendToClaude, showFileBrowser, showNewDocModal, showCommentInput, showSearch, cancelComment, closeSearch, vim.handleKeyDown, vim.selectionAnchor, vim.blockIndex, getBlocks, splitTabIndex, fetchSplitPaneContent, switchActivePane, selectedText]);
+  }, [doc.isEditMode, doc.isHtml, toggleEditMode, saveDocument, activeTabIndex, tabs.length, tabs, handleCloseTab, handleSelectTab, activeTab, comments, claude.isSending, claude.sendToClaude, showFileBrowser, showNewDocModal, showQuickCapture, showCommentInput, showSearch, cancelComment, closeSearch, vim.handleKeyDown, vim.selectionAnchor, vim.blockIndex, getBlocks, splitTabIndex, fetchSplitPaneContent, switchActivePane, selectedText]);
 
   // Electron menu bar actions
   useEffect(() => {
@@ -1014,6 +1018,9 @@ export default function Home() {
           break;
         case 'switch-pane':
           if (splitTabIndex !== null) switchActivePane();
+          break;
+        case 'quick-capture':
+          setShowQuickCapture(true);
           break;
       }
     });
@@ -2275,6 +2282,16 @@ export default function Home() {
         onSubmit={handleNewDocument}
         onCreateBlank={handleCreateBlank}
         onCancel={() => setShowNewDocModal(false)}
+      />
+
+      <QuickCaptureModal
+        show={showQuickCapture}
+        vaultRoot={vaultRoot}
+        onSubmit={(filePath, prompt) => {
+          setShowQuickCapture(false);
+          handleNewDocument(filePath, prompt);
+        }}
+        onCancel={() => setShowQuickCapture(false)}
       />
 
       <FileBrowser
